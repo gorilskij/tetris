@@ -3,12 +3,11 @@ use crate::support::sleep_until;
 use ggez::conf::{FullscreenType, WindowMode};
 use ggez::event::{EventHandler, KeyMods};
 use ggez::graphics::{
-    clear, draw, present, Color, DrawMode, DrawParam, FillOptions, MeshBuilder, Rect,
-    StrokeOptions, BLACK, WHITE,
+    clear, draw, present, Color, DrawMode, DrawParam, FillOptions, MeshBuilder, Rect, BLACK, WHITE,
 };
 use ggez::input::keyboard::KeyCode;
 use ggez::mint::Point2;
-use ggez::{Context, ContextBuilder, GameError, GameResult};
+use ggez::{Context, ContextBuilder, GameResult};
 use std::time::{Duration, Instant};
 
 pub struct VisGame {
@@ -19,8 +18,8 @@ pub struct VisGame {
 impl VisGame {
     pub fn run() {
         let window_mode = WindowMode {
-            width: 400.0,
-            height: 800.0,
+            width: 550.,
+            height: 650.,
             maximized: false,
             fullscreen_type: FullscreenType::Windowed,
             borderless: false,
@@ -47,6 +46,7 @@ impl VisGame {
 
 const LEFT_MARGIN: f32 = 10.;
 const TOP_MARGIN: f32 = 10.;
+const QUEUE_MARGIN: f32 = 30.; // between game and piece queue
 const CELL_SIDE: f32 = 30.;
 
 const FPS: u64 = 60;
@@ -144,12 +144,48 @@ impl EventHandler for VisGame {
             }
         }
 
+        // -- piece queue --
+        // background
+        let left = LEFT_MARGIN + GAME_WIDTH as f32 * CELL_SIDE + QUEUE_MARGIN;
+        let top = TOP_MARGIN;
+        let bg_rect = Rect {
+            x: left,
+            y: top,
+            w: (4. + 2.) * CELL_SIDE,
+            h: (4. * 3. + 5.) * CELL_SIDE,
+        };
+        builder.rectangle(
+            DrawMode::Fill(FillOptions::default()),
+            bg_rect,
+            Color::from_rgb(56, 56, 56),
+        );
+        // pieces
+        let x = left + CELL_SIDE;
+        for (i, id) in self.game.piece_queue.iter().enumerate() {
+            let y = top + (i as f32 * 5. + (i + 1) as f32) * CELL_SIDE;
+            let mask = self.game.rotation_map[&id][0];
+            for rel_y in 0..4 {
+                for rel_x in 0..4 {
+                    if mask[rel_y][rel_x] {
+                        let rect = Rect {
+                            x: x + rel_x as f32 * CELL_SIDE,
+                            y: y + rel_y as f32 * CELL_SIDE,
+                            w: SIDE,
+                            h: SIDE,
+                        };
+                        builder.rectangle(DrawMode::Fill(FillOptions::default()), rect, id.color());
+                    }
+                }
+            }
+        }
+
+        // build and draw
         let mesh = builder.build(ctx)?;
-        draw(ctx, &mesh, DrawParam::default());
+        draw(ctx, &mesh, DrawParam::default())?;
         present(ctx)
     }
 
-    fn key_down_event(&mut self, ctx: &mut Context, code: KeyCode, _mods: KeyMods, _: bool) {
+    fn key_down_event(&mut self, _ctx: &mut Context, code: KeyCode, _mods: KeyMods, _: bool) {
         match code {
             KeyCode::Left => self.game.teleport_flying_piece(-1, 0),
             KeyCode::Right => self.game.teleport_flying_piece(1, 0),

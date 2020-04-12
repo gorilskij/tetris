@@ -1,13 +1,11 @@
-use crate::support::sleep_until;
 use ggez::graphics::Color;
 use itertools::Itertools;
 use no_comment::IntoWithoutComments;
 use rand::prelude::*;
-use std::collections::HashMap;
+use std::collections::{HashMap, VecDeque};
 use std::fs::File;
 use std::io::{BufRead, BufReader};
 use std::path::Path;
-use std::time::{Duration, Instant};
 
 pub mod visual;
 
@@ -181,6 +179,43 @@ impl Pixel {
     }
 }
 
+pub struct PieceQueue {
+    rng: ThreadRng,
+    bag: Vec<PieceId>,
+    queue: VecDeque<PieceId>,
+}
+
+impl PieceQueue {
+    fn pop_from_bag(rng: &mut ThreadRng, bag: &mut Vec<PieceId>) -> PieceId {
+        if bag.is_empty() {
+            bag.extend_from_slice(PieceId::ALL)
+        }
+        let idx = rng.gen_range(0, bag.len());
+        bag.remove(idx)
+    }
+
+    fn new() -> Self {
+        let mut rng = thread_rng();
+        let mut bag = Vec::with_capacity(7);
+        let mut queue = VecDeque::with_capacity(3);
+        for _ in 0..3 {
+            queue.push_back(Self::pop_from_bag(&mut rng, &mut bag))
+        }
+        Self { rng, bag, queue }
+    }
+
+    fn pop(&mut self) -> PieceId {
+        let out = self.queue.pop_front().unwrap();
+        self.queue
+            .push_back(Self::pop_from_bag(&mut self.rng, &mut self.bag));
+        out
+    }
+
+    pub fn iter<'a>(&'a self) -> impl Iterator<Item = PieceId> + 'a {
+        self.queue.iter().copied()
+    }
+}
+
 pub const GAME_WIDTH: usize = 10;
 pub const GAME_HEIGHT: usize = 20;
 
@@ -188,8 +223,7 @@ pub const GAME_HEIGHT: usize = 20;
 type Board = [[Pixel; GAME_WIDTH]; GAME_HEIGHT];
 
 pub struct Game {
-    rng: ThreadRng,
-    current_bag: Vec<PieceId>,
+    piece_queue: PieceQueue,
 
     flying: Option<FlyingPiece>,
     rotation_map: RotationMap,
@@ -201,10 +235,9 @@ pub struct Game {
 
 impl Game {
     pub fn new() -> Self {
-        let mut board = [[Pixel::Empty; 10]; 20];
+        let board = [[Pixel::Empty; 10]; 20];
         Self {
-            rng: thread_rng(),
-            current_bag: Vec::with_capacity(7),
+            piece_queue: PieceQueue::new(),
 
             flying: None,
             rotation_map: parse_rotations_file("rotations.txt"),
@@ -216,12 +249,7 @@ impl Game {
     }
 
     fn spawn(&mut self) {
-        if self.current_bag.is_empty() {
-            self.current_bag.extend_from_slice(PieceId::ALL)
-        }
-
-        let idx = self.rng.gen_range(0, self.current_bag.len());
-        let id = self.current_bag.remove(idx);
+        let id = self.piece_queue.pop();
 
         self.flying = Some(FlyingPiece {
             id,
@@ -266,21 +294,22 @@ impl Game {
         if let Some(ref mut flying) = self.flying {
             let mask = &self.rotation_map[&flying.id][flying.rotation_idx];
             let new_pos = (flying.pos.0 as isize + dx, flying.pos.1 as isize + dy);
-            if !intersects_with(
-                mask,
-                new_pos,
-                &self.board,
-            ) {
+            if !intersects_with(mask, new_pos, &self.board) {
                 flying.pos = new_pos;
             }
         }
     }
 
-    pub fn rotate_flying_piece(&mut self, di: isize) { // +1 is 90° clockwise, -1 is 90° counterclockwise
+    pub fn rotate_flying_piece(&mut self, di: isize) {
+        // +1 is 90° clockwise, -1 is 90° counterclockwise
         if let Some(ref mut flying) = self.flying {
             let new_idx = ((flying.rotation_idx as isize + di % 4 + 4) % 4) as usize;
             let new_rotation = self.rotation_map[&flying.id][new_idx];
-            if !intersects_with(&new_rotation, (flying.pos.0 as isize, flying.pos.1 as isize), &self.board) {
+            if !intersects_with(
+                &new_rotation,
+                (flying.pos.0 as isize, flying.pos.1 as isize),
+                &self.board,
+            ) {
                 flying.rotation_idx = new_idx;
                 flying.rotation = new_rotation;
             }
