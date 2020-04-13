@@ -325,12 +325,13 @@ impl Game {
             let new_mask = self.mask_map[&flying.id][new_idx];
             // sometimes it's necessary to shift a bit when rotating, this is so
             // that rotation isn't blocked when touching the ground or next to a wall
-            for (dx, dy) in &[(0, 0), (0, -1), (0, 1), (-1, 0), (1, 0)] {
+            for (dx, dy) in &[(0, 0), (0, -1), (0, -2), (0, 1), (-1, 0), (1, 0)] {
                 let pos = (flying.pos.0 + dx, flying.pos.1 + dy);
                 if !intersects_with(&new_mask, pos, &self.board) {
                     flying.pos = pos;
                     flying.mask_idx = new_idx;
                     flying.mask = new_mask;
+                    break
                 }
             }
         }

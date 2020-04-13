@@ -82,9 +82,8 @@ impl VisGame {
 
     // for repetition
     fn key_pressed_teleport(&mut self, code: KeyCode) {
-        let pressed_keys = &mut self.pressed_keys;
         let game = &mut self.game;
-        pressed_keys.entry(code).and_modify(|v| match v {
+        self.pressed_keys.entry(code).and_modify(|v| match v {
             PressedState::Fresh(0) | PressedState::Down => {
                 Self::teleport(game, code);
                 *v = PressedState::Down;
@@ -249,7 +248,7 @@ impl EventHandler for VisGame {
         sleep_until(self.next_frame);
         let start = Instant::now();
 
-        if self.game.tick % 5 == 0 {
+        if self.game.tick % 4 == 0 {
             self.key_pressed_teleport(KeyCode::Left);
             self.key_pressed_teleport(KeyCode::Right);
             self.key_pressed_teleport(KeyCode::Down);
@@ -266,8 +265,8 @@ impl EventHandler for VisGame {
 
         let mut builder = MeshBuilder::new();
 
+        // contains temporary variables
         {
-            // contains temporary variables
             let right = self.add_hold(&mut builder);
 
             let pos = (right + SPACE_BETWEEN, TOP_MARGIN);
