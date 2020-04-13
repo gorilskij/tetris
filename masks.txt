@@ -1,5 +1,5 @@
-// the first rotation shows how the block should be spawned
-// following rotations are each 90° clockwise
+// the first mask shows how the block should be spawned
+// following masks are each 90° clockwise
 
 IBlock
 .  .  .  .

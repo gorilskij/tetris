@@ -9,23 +9,25 @@ use std::path::Path;
 
 pub mod visual;
 
-type Rotation = [[bool; 4]; 4];
-type Rotations = [Rotation; 4];
-type RotationMap = HashMap<PieceId, Rotations>;
+type Mask = [[bool; 4]; 4];
+type Masks = [Mask; 4];
+type MaskMap = HashMap<PieceId, Masks>;
 
 struct FlyingPiece {
     id: PieceId,
     pos: (isize, isize), // top-left corner
-    rotation_idx: usize,
-    rotation: Rotation, // cached
+    mask_idx: usize,
+    mask: Mask, // cached
 }
 
-fn intersects_with(mask: &Rotation, pos: (isize, isize), board: &Board) -> bool {
+// check whether the given mask at the given position intersects with any elements of the board
+// such as pixels or borders
+fn intersects_with(mask: &Mask, (x, y): (isize, isize), board: &Board) -> bool {
     for rel_x in 0..4 {
         for rel_y in 0..4 {
             if mask[rel_y][rel_x] {
-                let abs_x = rel_x as isize + pos.0;
-                let abs_y = rel_y as isize + pos.1;
+                let abs_x = rel_x as isize + x;
+                let abs_y = rel_y as isize + y;
                 if abs_x < 0
                     || abs_x >= GAME_WIDTH as isize
                     || abs_y < 0
@@ -47,7 +49,7 @@ impl FlyingPiece {
     // ground is positive y!
     fn is_touching_ground(&self, board: &Board) -> bool {
         intersects_with(
-            &self.rotation,
+            &self.mask,
             (self.pos.0 as isize, self.pos.1 as isize + 1),
             board,
         )
@@ -56,7 +58,7 @@ impl FlyingPiece {
     fn print_onto(&self, board: &mut Board) {
         for rel_x in 0..4 {
             for rel_y in 0..4 {
-                if self.rotation[rel_y][rel_x] {
+                if self.mask[rel_y][rel_x] {
                     let abs_x = (self.pos.0 + rel_x as isize) as usize;
                     let abs_y = (self.pos.1 + rel_y as isize) as usize;
                     // this check might be useless if collision checking is already implemented...
@@ -109,8 +111,10 @@ impl PieceId {
     }
 }
 
-pub fn parse_rotations_file<P: AsRef<Path>>(path: P) -> RotationMap {
-    let file = File::open(path).expect("failed to open rotations file");
+pub fn load_masks<P: AsRef<Path>>(path: P) -> MaskMap {
+    let path = path.as_ref();
+    let file = File::open(path)
+        .unwrap_or_else(|_| panic!("failed to open \"{}\"", path.display()));
 
     let text = BufReader::new(file)
         .lines()
@@ -125,7 +129,7 @@ pub fn parse_rotations_file<P: AsRef<Path>>(path: P) -> RotationMap {
 
     let iter = &mut text.chars();
 
-    let mut map = RotationMap::new();
+    let mut map = MaskMap::new();
     for _ in 0..7 {
         // also gets and drops '\n'
         let name: String = iter.take_while(|c| c.is_alphabetic()).collect();
@@ -141,13 +145,13 @@ pub fn parse_rotations_file<P: AsRef<Path>>(path: P) -> RotationMap {
             n => panic!("unexpected piece name \"{}\"", n),
         };
 
-        // 4 rotations, 4 lines, 4 values
-        let mut rotations = [[[false; 4]; 4]; 4];
+        // 4 masks, 4 lines, 4 values
+        let mut masks = [[[false; 4]; 4]; 4];
         for r in 0..4 {
             for l in 0..4 {
                 let line: String = iter.take_while(|&c| c != '\n').collect();
                 for (v, c) in line.split("  ").enumerate() {
-                    rotations[r][l][v] = match c {
+                    masks[r][l][v] = match c {
                         "." => false,
                         "0" => true,
                         c => panic!("unexpected '{}'", c),
@@ -158,7 +162,7 @@ pub fn parse_rotations_file<P: AsRef<Path>>(path: P) -> RotationMap {
             iter.take_while(|&c| c != '\n').for_each(|_| {});
         }
 
-        map.insert(name, rotations);
+        map.insert(name, masks);
     }
 
     map
@@ -226,7 +230,7 @@ pub struct Game {
     piece_queue: PieceQueue,
 
     flying: Option<FlyingPiece>,
-    rotation_map: RotationMap,
+    mask_map: MaskMap,
 
     board: Board,
 
@@ -240,7 +244,7 @@ impl Game {
             piece_queue: PieceQueue::new(),
 
             flying: None,
-            rotation_map: parse_rotations_file("rotations.txt"),
+            mask_map: load_masks("masks.txt"),
 
             board,
 
@@ -254,9 +258,15 @@ impl Game {
         self.flying = Some(FlyingPiece {
             id,
             pos: (GAME_WIDTH as isize / 2 - 2 /* width is 4 */, 0),
-            rotation_idx: 0,
-            rotation: self.rotation_map[&id][0],
+            mask_idx: 0,
+            mask: self.mask_map[&id][0],
         });
+    }
+
+    // print flying piece onto the board and destroy it (will be spawned next iteration)
+    fn destroy_flying(&mut self) {
+        self.flying.as_mut().unwrap().print_onto(&mut self.board);
+        self.flying = None;
     }
 
     pub fn iterate(&mut self) {
@@ -264,8 +274,7 @@ impl Game {
             // every 15 frames
             if let Some(ref mut flying) = self.flying {
                 if flying.is_touching_ground(&self.board) {
-                    flying.print_onto(&mut self.board);
-                    self.flying = None;
+                    self.destroy_flying();
                 } else {
                     flying.pos.1 += 1;
                 }
@@ -292,7 +301,7 @@ impl Game {
 impl Game {
     pub fn teleport_flying_piece(&mut self, dx: isize, dy: isize) {
         if let Some(ref mut flying) = self.flying {
-            let mask = &self.rotation_map[&flying.id][flying.rotation_idx];
+            let mask = &self.mask_map[&flying.id][flying.mask_idx];
             let new_pos = (flying.pos.0 as isize + dx, flying.pos.1 as isize + dy);
             if !intersects_with(mask, new_pos, &self.board) {
                 flying.pos = new_pos;
@@ -303,16 +312,33 @@ impl Game {
     pub fn rotate_flying_piece(&mut self, di: isize) {
         // +1 is 90° clockwise, -1 is 90° counterclockwise
         if let Some(ref mut flying) = self.flying {
-            let new_idx = ((flying.rotation_idx as isize + di % 4 + 4) % 4) as usize;
-            let new_rotation = self.rotation_map[&flying.id][new_idx];
-            if !intersects_with(
-                &new_rotation,
-                (flying.pos.0 as isize, flying.pos.1 as isize),
-                &self.board,
-            ) {
-                flying.rotation_idx = new_idx;
-                flying.rotation = new_rotation;
+            let new_idx = ((flying.mask_idx as isize + di % 4 + 4) % 4) as usize;
+            let new_mask = self.mask_map[&flying.id][new_idx];
+            // sometimes it's necessary to shift a bit when rotating, this is so
+            // that rotation isn't blocked when touching the ground or next to a wall
+            for (dx, dy) in &[(0, 0), (0, -1), (0, 1), (-1, 0), (1, 0)] {
+                let pos = (flying.pos.0 + dx, flying.pos.1 + dy);
+                if !intersects_with(&new_mask, pos, &self.board) {
+                    flying.pos = pos;
+                    flying.mask_idx = new_idx;
+                    flying.mask = new_mask;
+                }
             }
         }
+    }
+
+    pub fn slam_down(&mut self) {
+        if self.flying.is_none() {
+            self.spawn();
+        }
+
+        let flying = self.flying.as_mut().unwrap();
+        let mask = &flying.mask;
+        let mut pos = flying.pos;
+        while !intersects_with(mask, (pos.0, pos.1 + 1), &self.board) {
+            pos.1 += 1
+        }
+        flying.pos = pos;
+        self.destroy_flying();
     }
 }
