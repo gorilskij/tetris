@@ -18,6 +18,7 @@ struct FlyingPiece {
     pos: (isize, isize), // top-left corner
     mask_idx: usize,
     mask: Mask, // cached
+    grace: u8,  // grace period to avoid respawning as soon as the piece touches the ground
 }
 
 // check whether the given mask at the given position intersects with any elements of the board
@@ -113,8 +114,7 @@ impl PieceId {
 
 pub fn load_masks<P: AsRef<Path>>(path: P) -> MaskMap {
     let path = path.as_ref();
-    let file = File::open(path)
-        .unwrap_or_else(|_| panic!("failed to open \"{}\"", path.display()));
+    let file = File::open(path).unwrap_or_else(|_| panic!("failed to open \"{}\"", path.display()));
 
     let text = BufReader::new(file)
         .lines()
@@ -227,46 +227,51 @@ pub const GAME_HEIGHT: usize = 20;
 type Board = [[Pixel; GAME_WIDTH]; GAME_HEIGHT];
 
 pub struct Game {
-    piece_queue: PieceQueue,
-
-    flying: Option<FlyingPiece>,
     mask_map: MaskMap,
+    tick: usize, // frame tick tied to fps (== number of vis frames)
 
     board: Board,
-
-    tick: usize, // frame tick tied to fps (== number of vis frames)
+    piece_queue: PieceQueue,
+    flying: Option<FlyingPiece>,
+    hold: Option<PieceId>,
+    can_switch: bool, // to prevent double-switching hold
 }
 
 impl Game {
     pub fn new() -> Self {
         let board = [[Pixel::Empty; 10]; 20];
         Self {
-            piece_queue: PieceQueue::new(),
-
-            flying: None,
             mask_map: load_masks("masks.txt"),
+            tick: 0,
 
             board,
-
-            tick: 0,
+            piece_queue: PieceQueue::new(),
+            flying: None,
+            hold: None,
+            can_switch: true,
         }
     }
 
-    fn spawn(&mut self) {
-        let id = self.piece_queue.pop();
-
+    fn spawn_with(&mut self, id: PieceId) {
         self.flying = Some(FlyingPiece {
             id,
             pos: (GAME_WIDTH as isize / 2 - 2 /* width is 4 */, 0),
             mask_idx: 0,
             mask: self.mask_map[&id][0],
+            grace: 2,
         });
+    }
+
+    fn spawn(&mut self) {
+        let id = self.piece_queue.pop();
+        self.spawn_with(id)
     }
 
     // print flying piece onto the board and destroy it (will be spawned next iteration)
     fn destroy_flying(&mut self) {
         self.flying.as_mut().unwrap().print_onto(&mut self.board);
         self.flying = None;
+        self.can_switch = true;
     }
 
     pub fn iterate(&mut self) {
@@ -274,7 +279,11 @@ impl Game {
             // every 15 frames
             if let Some(ref mut flying) = self.flying {
                 if flying.is_touching_ground(&self.board) {
-                    self.destroy_flying();
+                    if flying.grace == 0 {
+                        self.destroy_flying();
+                    } else {
+                        flying.grace -= 1;
+                    }
                 } else {
                     flying.pos.1 += 1;
                 }
@@ -331,7 +340,6 @@ impl Game {
         if self.flying.is_none() {
             self.spawn();
         }
-
         let flying = self.flying.as_mut().unwrap();
         let mask = &flying.mask;
         let mut pos = flying.pos;
@@ -340,5 +348,21 @@ impl Game {
         }
         flying.pos = pos;
         self.destroy_flying();
+    }
+
+    pub fn switch_hold(&mut self) {
+        if self.can_switch {
+            self.can_switch = false;
+            let old = self.hold.take();
+            self.hold = Some(
+                self.flying
+                    .take()
+                    .map(|fp| fp.id)
+                    .unwrap_or_else(|| self.piece_queue.pop()),
+            );
+            if let Some(id) = old {
+                self.spawn_with(id)
+            }
+        }
     }
 }
