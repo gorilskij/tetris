@@ -1,4 +1,4 @@
-use crate::game::{Game, PieceId, Pixel, GAME_HEIGHT, GAME_WIDTH};
+use crate::game::{intersects_with, Game, PieceId, Pixel, GAME_HEIGHT, GAME_WIDTH};
 use crate::support::sleep_until;
 use ggez::conf::{FullscreenType, WindowMode};
 use ggez::event::{EventHandler, KeyMods};
@@ -19,19 +19,35 @@ enum PressedState {
     Fresh(u8),
 }
 
-type PressedKeys = HashMap<KeyCode, PressedState>;
+enum Repeat {
+    // initial_delay is number of 'delay's to wait
+    // i.e. if delay is 3 frames and initial_delay is 2, initial delay will be 6 frames
+    Repeat { initial_delay: u8, delay: u8 },
+    NoRepeat,
+}
+
+struct KeyInfo {
+    state: PressedState,
+    repeat: Repeat,
+}
+
+type Keys = HashMap<KeyCode, KeyInfo>;
 
 pub struct VisGame {
     game: Game,
+    paused: bool,
     next_frame: Instant,
-    pressed_keys: PressedKeys,
+    keys: Keys,
 }
+
+const WINDOW_WIDTH: f32 = 750.;
+const WINDOW_HEIGHT: f32 = 650.;
 
 impl VisGame {
     pub fn run() {
         let window_mode = WindowMode {
-            width: 750.,
-            height: 650.,
+            width: WINDOW_WIDTH,
+            height: WINDOW_HEIGHT,
             maximized: false,
             fullscreen_type: FullscreenType::Windowed,
             borderless: false,
@@ -47,14 +63,77 @@ impl VisGame {
             .build()
             .expect("failed to create context");
 
-        let mut keys = PressedKeys::new();
-        keys.insert(KeyCode::Left, PressedState::Up);
-        keys.insert(KeyCode::Right, PressedState::Up);
-        keys.insert(KeyCode::Down, PressedState::Up);
+        let mut keys = Keys::new();
+        keys.insert(
+            KeyCode::Left,
+            KeyInfo {
+                state: PressedState::Up,
+                repeat: Repeat::Repeat {
+                    initial_delay: 2,
+                    delay: 4,
+                },
+            },
+        );
+        keys.insert(
+            KeyCode::Right,
+            KeyInfo {
+                state: PressedState::Up,
+                repeat: Repeat::Repeat {
+                    initial_delay: 2,
+                    delay: 4,
+                },
+            },
+        );
+        keys.insert(
+            KeyCode::Down,
+            KeyInfo {
+                state: PressedState::Up,
+                repeat: Repeat::Repeat {
+                    initial_delay: 0,
+                    delay: 4,
+                },
+            },
+        );
+        keys.insert(
+            KeyCode::Up,
+            KeyInfo {
+                state: PressedState::Up,
+                repeat: Repeat::NoRepeat,
+            },
+        );
+        keys.insert(
+            KeyCode::RShift,
+            KeyInfo {
+                state: PressedState::Up,
+                repeat: Repeat::NoRepeat,
+            },
+        );
+        keys.insert(
+            KeyCode::Space,
+            KeyInfo {
+                state: PressedState::Up,
+                repeat: Repeat::NoRepeat,
+            },
+        );
+        keys.insert(
+            KeyCode::J,
+            KeyInfo {
+                state: PressedState::Up,
+                repeat: Repeat::NoRepeat,
+            },
+        );
+        keys.insert(
+            KeyCode::Escape,
+            KeyInfo {
+                state: PressedState::Up,
+                repeat: Repeat::NoRepeat,
+            },
+        );
         let mut game = Self {
             game: Game::new(),
+            paused: false,
             next_frame: Instant::now(),
-            pressed_keys: keys,
+            keys: keys,
         };
 
         ggez::event::run(ctx, event_loop, &mut game).expect("game exited unsuccessfully");
@@ -71,26 +150,18 @@ const WAIT: Duration = Duration::from_millis(1000 / FPS);
 
 impl VisGame {
     // unconditional
-    fn teleport(game: &mut Game, code: KeyCode) {
+    fn do_key_action(&mut self, code: KeyCode) {
         match code {
-            KeyCode::Left => game.teleport_flying_piece(-1, 0),
-            KeyCode::Right => game.teleport_flying_piece(1, 0),
-            KeyCode::Down => game.teleport_flying_piece(0, 1),
-            c => panic!("invalid teleportation KeyCode: {:?}", c),
+            KeyCode::Left => self.game.teleport_flying_piece(-1, 0),
+            KeyCode::Right => self.game.teleport_flying_piece(1, 0),
+            KeyCode::Down => self.game.teleport_flying_piece(0, 1),
+            KeyCode::Up => self.game.rotate_flying_piece(1),
+            KeyCode::RShift => self.game.rotate_flying_piece(-1),
+            KeyCode::Space => self.game.slam_down(),
+            KeyCode::J => self.game.switch_hold(),
+            KeyCode::Escape => self.paused = !self.paused,
+            c => panic!("unexpected KeyCode: {:?}", c),
         }
-    }
-
-    // for repetition
-    fn key_pressed_teleport(&mut self, code: KeyCode) {
-        let game = &mut self.game;
-        self.pressed_keys.entry(code).and_modify(|v| match v {
-            PressedState::Fresh(0) | PressedState::Down => {
-                Self::teleport(game, code);
-                *v = PressedState::Down;
-            }
-            PressedState::Fresh(x) => *x -= 1,
-            _ => (),
-        });
     }
 }
 
@@ -196,10 +267,11 @@ impl VisGame {
 
     fn add_flying(&mut self, (left, top): (f32, f32), builder: &mut MeshBuilder) {
         if let Some(flying) = self.game.flying.as_ref() {
-            let rotation = flying.mask;
+            let mask = flying.mask;
+            // piece
             for rel_y in 0..4 {
                 for rel_x in 0..4 {
-                    if rotation[rel_y][rel_x] {
+                    if mask[rel_y][rel_x] {
                         let abs_y = (rel_y as isize + flying.pos.1) as usize;
                         let abs_x = (rel_x as isize + flying.pos.0) as usize;
                         let vis_y = top + abs_y as f32 * CELL_SIDE;
@@ -215,6 +287,29 @@ impl VisGame {
                             rect,
                             flying.id.color(),
                         );
+                    }
+                }
+            }
+            // shadow
+            if let Some(lowest_y) = (flying.pos.1 + 1..GAME_HEIGHT as isize)
+                .take_while(|&i| !intersects_with(&mask, (flying.pos.0, i), &self.game.board))
+                .last()
+            {
+                for rel_y in 0..4 {
+                    for rel_x in 0..4 {
+                        if mask[rel_y][rel_x] {
+                            let abs_y = (rel_y as isize + lowest_y) as usize;
+                            let abs_x = (rel_x as isize + flying.pos.0) as usize;
+                            let vis_y = top + abs_y as f32 * CELL_SIDE;
+                            let vis_x = left + abs_x as f32 * CELL_SIDE;
+                            let rect = Rect {
+                                x: vis_x,
+                                y: vis_y,
+                                w: SIDE,
+                                h: SIDE,
+                            };
+                            builder.rectangle(DrawMode::stroke(3.), rect, flying.id.color());
+                        }
                     }
                 }
             }
@@ -245,18 +340,34 @@ impl VisGame {
 
 impl EventHandler for VisGame {
     fn update(&mut self, _ctx: &mut Context) -> GameResult<()> {
-        sleep_until(self.next_frame);
-        let start = Instant::now();
+        if !self.paused {
+            sleep_until(self.next_frame);
+            let start = Instant::now();
 
-        if self.game.tick % 4 == 0 {
-            self.key_pressed_teleport(KeyCode::Left);
-            self.key_pressed_teleport(KeyCode::Right);
-            self.key_pressed_teleport(KeyCode::Down);
+            let mut actions = Vec::with_capacity(self.keys.len());
+            for (&code, info) in self.keys.iter_mut() {
+                if let Repeat::Repeat { delay, .. } = info.repeat {
+                    if self.game.tick % delay as usize == 0 {
+                        match info.state {
+                            ref mut s @ PressedState::Fresh(0) | ref mut s @ PressedState::Down => {
+                                actions.push(code);
+                                *s = PressedState::Down;
+                            }
+                            PressedState::Fresh(ref mut x) => *x -= 1,
+                            _ => (),
+                        }
+                    }
+                }
+            }
+            for code in actions {
+                self.do_key_action(code)
+            }
+
+            self.game.iterate();
+
+            self.next_frame = start + WAIT;
         }
 
-        self.game.iterate();
-
-        self.next_frame = start + WAIT;
         Ok(())
     }
 
@@ -265,8 +376,18 @@ impl EventHandler for VisGame {
 
         let mut builder = MeshBuilder::new();
 
-        // contains temporary variables
-        {
+        if self.paused {
+            builder.rectangle(
+                DrawMode::Fill(FillOptions::default()),
+                Rect {
+                    x: 0.,
+                    y: 0.,
+                    w: WINDOW_WIDTH,
+                    h: WINDOW_HEIGHT,
+                },
+                Color::from_rgb(64, 64, 64),
+            );
+        } else {
             let right = self.add_hold(&mut builder);
 
             let pos = (right + SPACE_BETWEEN, TOP_MARGIN);
@@ -285,29 +406,40 @@ impl EventHandler for VisGame {
 
     fn key_down_event(&mut self, _ctx: &mut Context, code: KeyCode, _mods: KeyMods, _: bool) {
         let mut found = false;
-        let game = &mut self.game;
-        self.pressed_keys.entry(code).and_modify(|v| {
-            if *v == PressedState::Up {
-                *v = PressedState::Fresh(2);
-                Self::teleport(game, code);
+        let mut action = None;
+        self.keys.entry(code).and_modify(|v| {
+            if v.state == PressedState::Up {
+                v.state = match v.repeat {
+                    Repeat::Repeat { initial_delay, .. } => PressedState::Fresh(initial_delay),
+                    Repeat::NoRepeat => PressedState::Down,
+                };
+                action = Some(code);
             }
             found = true;
         });
+        if let Some(code) = action {
+            self.do_key_action(code)
+        }
 
         if !found {
             match code {
-                KeyCode::Up => self.game.rotate_flying_piece(1),
-                KeyCode::RShift => self.game.rotate_flying_piece(-1),
-                KeyCode::Space => self.game.slam_down(),
-                KeyCode::J => self.game.switch_hold(),
+                KeyCode::Escape => self.paused = !self.paused,
                 _ => (),
             }
         }
+        //         // KeyCode::Up => self.game.rotate_flying_piece(1),
+        //         // KeyCode::RShift => self.game.rotate_flying_piece(-1),
+        //         // KeyCode::Space => self.game.slam_down(),
+        //         // KeyCode::J => self.game.switch_hold(),
+        //         // KeyCode::Escape => self.paused = !self.paused,
+        //         _ => (),
+        //     }
+        // }
     }
 
     fn key_up_event(&mut self, _ctx: &mut Context, code: KeyCode, _mods: KeyMods) {
-        self.pressed_keys.entry(code).and_modify(|v| {
-            *v = PressedState::Up;
+        self.keys.entry(code).and_modify(|v| {
+            v.state = PressedState::Up;
         });
     }
 }

@@ -274,9 +274,24 @@ impl Game {
         self.can_switch = true;
     }
 
+    // might get called twice but that shouldn't matter
+    fn compact_board(&mut self) {
+        let mut shift_up = 0; // shift towards ground (positive-y)
+        for y in (0..GAME_HEIGHT).rev() {
+            if self.board[y].iter().all(|px| !px.is_empty()) {
+                shift_up += 1;
+            } else if shift_up > 0 {
+                self.board[y + shift_up] = self.board[y];
+                self.board[y] = [Pixel::Empty; GAME_WIDTH];
+            }
+        }
+    }
+
     pub fn iterate(&mut self) {
+        self.compact_board();
+
+        // every 15 frames iterate flying piece
         if self.tick % 15 == 0 {
-            // every 15 frames
             if let Some(ref mut flying) = self.flying {
                 if flying.is_touching_ground(&self.board) {
                     if flying.grace == 0 {
@@ -289,16 +304,6 @@ impl Game {
                 }
             } else {
                 self.spawn()
-            }
-        }
-
-        // compact board
-        let mut shift_up = 0; // shift towards ground (positive-y)
-        for y in (0..GAME_HEIGHT).rev() {
-            if self.board[y].iter().all(|px| !px.is_empty()) {
-                shift_up += 1;
-            } else if shift_up > 0 {
-                self.board[y + shift_up] = self.board[y]
             }
         }
 
@@ -325,19 +330,28 @@ impl Game {
             let new_mask = self.mask_map[&flying.id][new_idx];
             // sometimes it's necessary to shift a bit when rotating, this is so
             // that rotation isn't blocked when touching the ground or next to a wall
-            for (dx, dy) in &[(0, 0), (0, -1), (0, -2), (0, 1), (-1, 0), (1, 0)] {
+            for (dx, dy) in #[rustfmt::skip] &[
+                    (0, 0),
+                    (0, -1), (0, -2), // up
+                    (0, 1), (0, 2), // down
+                    (-1, 0), (-2, 0), // left
+                    (1, 0), (2, 0), // right
+                ]
+            {
                 let pos = (flying.pos.0 + dx, flying.pos.1 + dy);
                 if !intersects_with(&new_mask, pos, &self.board) {
                     flying.pos = pos;
                     flying.mask_idx = new_idx;
                     flying.mask = new_mask;
-                    break
+                    break;
                 }
             }
         }
     }
 
+    // warn there's a bug with piece duplication somewhere...
     pub fn slam_down(&mut self) {
+        self.compact_board();
         if self.flying.is_none() {
             self.spawn();
         }
