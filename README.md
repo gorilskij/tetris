@@ -8,4 +8,7 @@ The intention is to eventually connect a neural network to the game...
  - `Right` - move right
  - `Up` - rotate clockwise
  - `RShift` - rotate counterclockwise
- - (`Down` and `Space` are not yet implemented)
+ - `Down` - soft drop
+ - `Space` - hard drop
+ - `J` - switch hold
+ - `Esc` - play / pause
