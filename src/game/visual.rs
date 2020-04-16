@@ -11,6 +11,11 @@ use ggez::{Context, ContextBuilder, GameResult};
 use std::collections::HashMap;
 use std::time::{Duration, Instant};
 
+#[allow(unused_imports)]
+use std::cmp::min;
+#[allow(unused_imports)]
+use tuple_map::*;
+
 // fresh indicates the key was just pressed (with iterations left to wait)
 #[derive(Debug, Eq, PartialEq)]
 enum PressedState {
@@ -265,9 +270,112 @@ impl VisGame {
         }
     }
 
-    fn add_flying(&mut self, (left, top): (f32, f32), builder: &mut MeshBuilder) {
+    #[must_use]
+    fn add_flying(&mut self, (left, top): (f32, f32), builder: &mut MeshBuilder) -> GameResult<()> {
         if let Some(flying) = self.game.flying.as_ref() {
             let mask = flying.mask;
+
+            // shadow
+            if let Some(lowest_y) = (flying.pos.1 + 1..GAME_HEIGHT as isize)
+                .take_while(|&i| !intersects_with(&mask, (flying.pos.0, i), &self.game.board))
+                .last()
+            {
+                for rel_y in 0..4 {
+                    for rel_x in 0..4 {
+                        if mask[rel_y][rel_x] {
+                            let abs_y = (rel_y as isize + lowest_y) as usize;
+                            let abs_x = (rel_x as isize + flying.pos.0) as usize;
+                            let vis_y = top + abs_y as f32 * CELL_SIDE;
+                            let vis_x = left + abs_x as f32 * CELL_SIDE;
+
+                            // each pixel outline
+                            // let rect = Rect {
+                            //     x: vis_x,
+                            //     y: vis_y,
+                            //     w: SIDE,
+                            //     h: SIDE,
+                            // };
+                            // builder.rectangle(DrawMode::stroke(3.), rect, flying.id.color());
+
+                            // fainter color (looks bad)
+                            // let rgb = flying.id.color().to_rgb();
+                            // let increase_possible = rgb.map(|x| 255. / x as f32);
+                            // let min_increase_possible = increase_possible.tmin();
+                            // let (r, g, b) = rgb.map(|x| {
+                            //     let dx = (min_increase_possible * x as f32) as u8;
+                            //     x + min(dx, 255 - x)
+                            // });
+                            // builder.rectangle(DrawMode::fill(), rect, Color::from_rgb(r, g, b));
+
+                            // full block outline
+                            let color = flying.id.color();
+                            if rel_y == 0 || !mask[rel_y - 1][rel_x] {
+                                // top line
+                                builder.line(
+                                    &[
+                                        Point2 { x: vis_x, y: vis_y },
+                                        Point2 {
+                                            x: vis_x + SIDE,
+                                            y: vis_y,
+                                        },
+                                    ],
+                                    3.,
+                                    color,
+                                )?;
+                            }
+                            if rel_y == 3 || !mask[rel_y + 1][rel_x] {
+                                // bottom line
+                                builder.line(
+                                    &[
+                                        Point2 {
+                                            x: vis_x,
+                                            y: vis_y + SIDE,
+                                        },
+                                        Point2 {
+                                            x: vis_x + SIDE,
+                                            y: vis_y + SIDE,
+                                        },
+                                    ],
+                                    3.,
+                                    color,
+                                )?;
+                            }
+                            if rel_x == 0 || !mask[rel_y][rel_x - 1] {
+                                // left line
+                                builder.line(
+                                    &[
+                                        Point2 { x: vis_x, y: vis_y },
+                                        Point2 {
+                                            x: vis_x,
+                                            y: vis_y + SIDE,
+                                        },
+                                    ],
+                                    3.,
+                                    color,
+                                )?;
+                            }
+                            if rel_x == 3 || !mask[rel_y][rel_x + 1] {
+                                // right line
+                                builder.line(
+                                    &[
+                                        Point2 {
+                                            x: vis_x + SIDE,
+                                            y: vis_y,
+                                        },
+                                        Point2 {
+                                            x: vis_x + SIDE,
+                                            y: vis_y + SIDE,
+                                        },
+                                    ],
+                                    3.,
+                                    color,
+                                )?;
+                            }
+                        }
+                    }
+                }
+            }
+
             // piece
             for rel_y in 0..4 {
                 for rel_x in 0..4 {
@@ -290,30 +398,9 @@ impl VisGame {
                     }
                 }
             }
-            // shadow
-            if let Some(lowest_y) = (flying.pos.1 + 1..GAME_HEIGHT as isize)
-                .take_while(|&i| !intersects_with(&mask, (flying.pos.0, i), &self.game.board))
-                .last()
-            {
-                for rel_y in 0..4 {
-                    for rel_x in 0..4 {
-                        if mask[rel_y][rel_x] {
-                            let abs_y = (rel_y as isize + lowest_y) as usize;
-                            let abs_x = (rel_x as isize + flying.pos.0) as usize;
-                            let vis_y = top + abs_y as f32 * CELL_SIDE;
-                            let vis_x = left + abs_x as f32 * CELL_SIDE;
-                            let rect = Rect {
-                                x: vis_x,
-                                y: vis_y,
-                                w: SIDE,
-                                h: SIDE,
-                            };
-                            builder.rectangle(DrawMode::stroke(3.), rect, flying.id.color());
-                        }
-                    }
-                }
-            }
         }
+
+        Ok(())
     }
 
     fn add_queue(&mut self, (left, top): (f32, f32), builder: &mut MeshBuilder) {
@@ -393,7 +480,7 @@ impl EventHandler for VisGame {
             let pos = (right + SPACE_BETWEEN, TOP_MARGIN);
             let right = self.add_grid(pos, &mut builder)?;
             self.add_pixels(pos, &mut builder);
-            self.add_flying(pos, &mut builder);
+            self.add_flying(pos, &mut builder)?;
 
             self.add_queue((right + SPACE_BETWEEN, TOP_MARGIN), &mut builder);
         }
