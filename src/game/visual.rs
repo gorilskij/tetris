@@ -45,7 +45,7 @@ pub struct VisGame {
     keys: Keys,
 }
 
-const WINDOW_WIDTH: f32 = 750.;
+const WINDOW_WIDTH: f32 = 1150.;
 const WINDOW_HEIGHT: f32 = 650.;
 
 impl VisGame {
@@ -403,25 +403,81 @@ impl VisGame {
         Ok(())
     }
 
-    fn add_queue(&mut self, (left, top): (f32, f32), builder: &mut MeshBuilder) {
+    fn add_queue(&mut self, (left, top): (f32, f32), builder: &mut MeshBuilder) -> f32 {
         // background
+        let width = (4. + 2.) * CELL_SIDE;
         let bg_rect = Rect {
             x: left,
             y: top,
-            w: (4. + 2.) * CELL_SIDE,
+            w: width,
             h: (4. * 3. + 5.) * CELL_SIDE,
         };
-        builder.rectangle(
-            DrawMode::Fill(FillOptions::default()),
-            bg_rect,
-            Color::from_rgb(56, 56, 56),
-        );
+        builder.rectangle(DrawMode::fill(), bg_rect, Color::from_rgb(56, 56, 56));
         // pieces
         let x = left + CELL_SIDE;
         for (i, id) in self.game.piece_queue.iter().enumerate() {
             let y = top + (i as f32 * 5. + (i + 1) as f32) * CELL_SIDE;
             self.add_piece_at((x, y), id, builder);
         }
+
+        left + width
+    }
+
+    fn add_keys(&self, (left, top): (f32, f32), builder: &mut MeshBuilder) {
+        let bg_rect = Rect {
+            x: left,
+            y: top,
+            w: (6. + 4.) * CELL_SIDE,
+            h: (8. + 5.) * CELL_SIDE,
+        };
+        builder.rectangle(DrawMode::fill(), bg_rect, Color::from_rgb(56, 56, 56));
+        let mut key_bg = |x, y, rel_width, code| {
+            let cells = rel_width * 3 - 1;
+            let rect = Rect {
+                x,
+                y,
+                w: cells as f32 * CELL_SIDE,
+                h: 2. * CELL_SIDE,
+            };
+            builder.rectangle(
+                DrawMode::fill(),
+                rect,
+                if self.keys[&code].state != PressedState::Up {
+                    Color::from_rgb(181, 45, 45)
+                } else {
+                    Color::from_rgb(102, 25, 25)
+                },
+            );
+        };
+        // up key
+        key_bg(left + 4. * CELL_SIDE, top + CELL_SIDE, 1, KeyCode::Up);
+        // down key
+        key_bg(
+            left + 4. * CELL_SIDE,
+            top + 4. * CELL_SIDE,
+            1,
+            KeyCode::Down,
+        );
+        // left key
+        key_bg(left + CELL_SIDE, top + 4. * CELL_SIDE, 1, KeyCode::Left);
+        // right key
+        key_bg(
+            left + 7. * CELL_SIDE,
+            top + 4. * CELL_SIDE,
+            1,
+            KeyCode::Right,
+        );
+        // hold key
+        key_bg(left + CELL_SIDE, top + 7. * CELL_SIDE, 1, KeyCode::J);
+        // rshift
+        key_bg(
+            left + 4. * CELL_SIDE,
+            top + 7. * CELL_SIDE,
+            2,
+            KeyCode::RShift,
+        );
+        // spacebar
+        key_bg(left + CELL_SIDE, top + 10. * CELL_SIDE, 3, KeyCode::Space);
     }
 }
 
@@ -482,7 +538,9 @@ impl EventHandler for VisGame {
             self.add_pixels(pos, &mut builder);
             self.add_flying(pos, &mut builder)?;
 
-            self.add_queue((right + SPACE_BETWEEN, TOP_MARGIN), &mut builder);
+            let right = self.add_queue((right + SPACE_BETWEEN, TOP_MARGIN), &mut builder);
+
+            self.add_keys((right + SPACE_BETWEEN, TOP_MARGIN), &mut builder);
         }
 
         // build and draw
@@ -514,14 +572,6 @@ impl EventHandler for VisGame {
                 _ => (),
             }
         }
-        //         // KeyCode::Up => self.game.rotate_flying_piece(1),
-        //         // KeyCode::RShift => self.game.rotate_flying_piece(-1),
-        //         // KeyCode::Space => self.game.slam_down(),
-        //         // KeyCode::J => self.game.switch_hold(),
-        //         // KeyCode::Escape => self.paused = !self.paused,
-        //         _ => (),
-        //     }
-        // }
     }
 
     fn key_up_event(&mut self, _ctx: &mut Context, code: KeyCode, _mods: KeyMods) {

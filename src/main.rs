@@ -8,8 +8,8 @@ mod neural_network;
 mod support;
 
 fn main() {
-    // VisGame::run();
-    let nn = NN::new(&[4, 10, 6]);
-    let out = nn.apply(&[1., 2., 3., 4.]);
-    println!("{:?}", out);
+    VisGame::run();
+    // let nn = NN::new(&[4, 10, 6]);
+    // let out = nn.apply(&[1., 2., 3., 4.]);
+    // println!("{:?}", out);
 }

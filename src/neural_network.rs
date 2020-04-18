@@ -1,6 +1,6 @@
-use ggez::nalgebra::{Matrix4, Matrix, DMatrix, Vector};
-use rand::prelude::*;
+use ggez::nalgebra::{DMatrix, Matrix, Matrix4, Vector};
 use itertools::Itertools;
+use rand::prelude::*;
 
 struct Layer(DMatrix<f64>);
 
@@ -15,12 +15,21 @@ impl NN {
         let mut layers = vec![];
         let mut windows = layer_sizes.windows(2);
         while let Some(&[nrows, ncols]) = windows.next() {
-            let mat: DMatrix<f64> = DMatrix::from_fn(ncols, nrows, |_, _| rng.gen_range(0.0, 0.001));
+            let mat: DMatrix<f64> =
+                DMatrix::from_fn(ncols, nrows, |_, _| rng.gen_range(0.0, 0.001));
             layers.push(Layer(mat));
         }
         println!("len: {}", layers.len());
-        println!("dims: {:?}", layers.iter().map(|m| (m.0.ncols(), m.0.nrows())).collect::<Vec<_>>());
-        Self { layers: layers.into_boxed_slice() }
+        println!(
+            "dims: {:?}",
+            layers
+                .iter()
+                .map(|m| (m.0.ncols(), m.0.nrows()))
+                .collect::<Vec<_>>()
+        );
+        Self {
+            layers: layers.into_boxed_slice(),
+        }
     }
 
     pub fn apply(&self, input: &[f64]) -> Box<[f64]> {
