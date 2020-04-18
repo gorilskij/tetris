@@ -1,5 +1,4 @@
-use ggez::nalgebra::{DMatrix, Matrix, Matrix4, Vector};
-use itertools::Itertools;
+use ggez::nalgebra::DMatrix;
 use rand::prelude::*;
 
 struct Layer(DMatrix<f64>);

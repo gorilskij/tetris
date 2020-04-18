@@ -230,6 +230,7 @@ type Board = [[Pixel; GAME_WIDTH]; GAME_HEIGHT];
 pub struct Game {
     mask_map: MaskMap,
     tick: usize, // frame tick tied to fps (== number of vis frames)
+    points: usize,
 
     board: Board,
     piece_queue: PieceQueue,
@@ -244,6 +245,7 @@ impl Game {
         Self {
             mask_map: load_masks("masks.txt"),
             tick: 0,
+            points: 0,
 
             board,
             piece_queue: PieceQueue::new(),
@@ -256,7 +258,8 @@ impl Game {
     // return concatenated rows of cells, includes flying piece
     pub fn get_cells(&self) -> Box<[f64]> {
         // board
-        let mut cells = self.board
+        let mut cells = self
+            .board
             .iter()
             .flat_map(|row| row.iter().map(|px| if px.is_empty() { 0. } else { 1. }))
             .collect::<Vec<_>>()
@@ -299,6 +302,7 @@ impl Game {
     }
 
     // might get called twice but that shouldn't matter
+    // also does scoring
     fn compact_board(&mut self) {
         let mut shift_up = 0; // shift towards ground (positive-y)
         for y in (0..GAME_HEIGHT).rev() {
@@ -308,6 +312,14 @@ impl Game {
                 self.board[y + shift_up] = self.board[y];
                 self.board[y] = [Pixel::Empty; GAME_WIDTH];
             }
+        }
+        self.points += match shift_up {
+            0 => 0,
+            1 => 40,
+            2 => 100,
+            3 => 300,
+            4 => 1200,
+            n => panic!("unexpected {} lines cleared", n),
         }
     }
 
@@ -373,20 +385,22 @@ impl Game {
         }
     }
 
-    // warn there's a bug with piece duplication somewhere...
-    pub fn slam_down(&mut self) {
+    // does scoring
+    pub fn hard_drop(&mut self) {
         self.compact_board();
         if self.flying.is_none() {
             self.spawn();
         }
         let flying = self.flying.as_mut().unwrap();
         let mask = &flying.mask;
-        let mut pos = flying.pos;
-        while !intersects_with(mask, (pos.0, pos.1 + 1), &self.board) {
-            pos.1 += 1
+        let pos = flying.pos;
+        let mut delta = 0;
+        while !intersects_with(mask, (pos.0, pos.1 + delta as isize + 1), &self.board) {
+            delta += 1
         }
-        flying.pos = pos;
+        flying.pos = (pos.0, pos.1 + delta as isize);
         self.destroy_flying();
+        self.points += delta + 1;
     }
 
     pub fn switch_hold(&mut self) {

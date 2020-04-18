@@ -1,21 +1,21 @@
 use crate::game::{intersects_with, Game, PieceId, Pixel, GAME_HEIGHT, GAME_WIDTH};
 use crate::support::sleep_until;
-use ggez::conf::{FullscreenType, WindowMode};
 use ggez::event::{EventHandler, KeyMods};
 use ggez::graphics::{
-    clear, draw, present, Color, DrawMode, DrawParam, FillOptions, MeshBuilder, Rect, BLACK, WHITE,
+    clear, draw, draw_queued_text, present, queue_text, Color, DrawMode, DrawParam, FillOptions,
+    FilterMode, MeshBuilder, Rect, Text, BLACK, WHITE,
 };
 use ggez::input::keyboard::KeyCode;
 use ggez::mint::Point2;
-use ggez::{Context, ContextBuilder, GameResult};
+use ggez::{Context, GameResult};
 use std::collections::HashMap;
 use std::time::{Duration, Instant};
 
+use crate::{run_game, WINDOW_HEIGHT, WINDOW_WIDTH};
 #[allow(unused_imports)]
 use std::cmp::min;
 #[allow(unused_imports)]
 use tuple_map::*;
-use crate::{run_game, WINDOW_WIDTH, WINDOW_HEIGHT};
 
 // fresh indicates the key was just pressed (with iterations left to wait)
 #[derive(Copy, Clone, Debug, Eq, PartialEq)]
@@ -154,7 +154,7 @@ impl VisGame {
             KeyCode::Down => self.game.teleport_flying_piece(0, 1),
             KeyCode::Up => self.game.rotate_flying_piece(1),
             KeyCode::RShift => self.game.rotate_flying_piece(-1),
-            KeyCode::Space => self.game.slam_down(),
+            KeyCode::Space => self.game.hard_drop(),
             KeyCode::J => self.game.switch_hold(),
             KeyCode::Escape => self.paused = !self.paused,
             c => panic!("unexpected KeyCode: {:?}", c),
@@ -415,6 +415,33 @@ impl VisGame {
         left + width
     }
 
+    fn add_points(
+        &self,
+        (left, top): (f32, f32),
+        builder: &mut MeshBuilder,
+        ctx: &mut Context,
+    ) -> f32 {
+        let height = 4. * CELL_SIDE;
+        let bg_rect = Rect {
+            x: left,
+            y: top,
+            w: 10. * CELL_SIDE,
+            h: height,
+        };
+        builder.rectangle(DrawMode::fill(), bg_rect, Color::from_rgb(56, 56, 56));
+
+        queue_text(
+            ctx,
+            &Text::new(format!("{}", self.game.points)),
+            Point2 {
+                x: left + CELL_SIDE,
+                y: top + CELL_SIDE,
+            },
+            Some(WHITE),
+        );
+        top + height
+    }
+
     fn add_keys(&self, (left, top): (f32, f32), builder: &mut MeshBuilder) {
         let bg_rect = Rect {
             x: left,
@@ -531,13 +558,18 @@ impl EventHandler for VisGame {
             self.add_flying(pos, &mut builder)?;
 
             let right = self.add_queue((right + SPACE_BETWEEN, TOP_MARGIN), &mut builder);
-
-            self.add_keys((right + SPACE_BETWEEN, TOP_MARGIN), &mut builder);
+            let bottom = self.add_points((right + SPACE_BETWEEN, TOP_MARGIN), &mut builder, ctx);
+            self.add_keys(
+                (right + SPACE_BETWEEN, bottom + SPACE_BETWEEN),
+                &mut builder,
+            );
         }
 
         // build and draw
         let mesh = builder.build(ctx)?;
         draw(ctx, &mesh, DrawParam::default())?;
+        draw_queued_text(ctx, DrawParam::default(), None, FilterMode::Linear)?;
+
         present(ctx)
     }
 

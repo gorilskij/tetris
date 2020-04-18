@@ -1,10 +1,10 @@
 use crate::game::visual::VisGame;
 use crate::game::{GAME_HEIGHT, GAME_WIDTH};
 use crate::neural_network::NN;
-use ggez::event::{EventHandler, KeyMods};
-use ggez::{Context, GameResult};
-use ggez::input::keyboard::KeyCode;
 use crate::run_game;
+use ggez::event::{EventHandler, KeyMods};
+use ggez::input::keyboard::KeyCode;
+use ggez::{Context, GameResult};
 
 pub struct NNVisGame {
     vis: VisGame,
@@ -12,6 +12,7 @@ pub struct NNVisGame {
 }
 
 impl NNVisGame {
+    #[allow(dead_code)]
     pub fn new() -> Self {
         Self {
             vis: VisGame::new(),
@@ -20,12 +21,21 @@ impl NNVisGame {
         }
     }
 
+    #[allow(dead_code)]
     pub fn run(&mut self) -> GameResult<()> {
         run_game(self)
     }
 }
 
-const KEY_ORDER: [KeyCode; 7] = [KeyCode::Up, KeyCode::Down, KeyCode::Left, KeyCode::Right, KeyCode::J, KeyCode::RShift, KeyCode::Space];
+const KEY_ORDER: [KeyCode; 7] = [
+    KeyCode::Up,
+    KeyCode::Down,
+    KeyCode::Left,
+    KeyCode::Right,
+    KeyCode::J,
+    KeyCode::RShift,
+    KeyCode::Space,
+];
 
 impl EventHandler for NNVisGame {
     fn update(&mut self, ctx: &mut Context) -> GameResult<()> {
@@ -44,7 +54,8 @@ impl EventHandler for NNVisGame {
             if is_pressed && !should_be_pressed {
                 self.vis.key_up_event(ctx, code, KeyMods::default())
             } else if !is_pressed && should_be_pressed {
-                self.vis.key_down_event(ctx, code, KeyMods::default(), false)
+                self.vis
+                    .key_down_event(ctx, code, KeyMods::default(), false)
             }
         }
         self.vis.update(ctx)
@@ -56,8 +67,8 @@ impl EventHandler for NNVisGame {
 
     fn key_down_event(
         &mut self,
-        ctx: &mut Context,
-        keycode: KeyCode,
+        _ctx: &mut Context,
+        _keycode: KeyCode,
         _keymods: KeyMods,
         _repeat: bool,
     ) {

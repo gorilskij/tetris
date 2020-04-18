@@ -1,11 +1,13 @@
 #![feature(stmt_expr_attributes)] // for fine-grained rustfmt control
 
-use crate::game::visual::VisGame;
-use crate::neural_network::NN;
+#[allow(unused_imports)]
 use crate::game::nn_visual::NNVisGame;
+#[allow(unused_imports)]
+use crate::game::visual::VisGame;
+
+use ggez::conf::{FullscreenType, WindowMode};
 use ggez::event::EventHandler;
-use ggez::{GameResult, ContextBuilder};
-use ggez::conf::{WindowMode, FullscreenType};
+use ggez::{ContextBuilder, GameResult};
 
 pub(crate) mod game;
 pub(crate) mod neural_network;
@@ -37,9 +39,6 @@ pub fn run_game(eh: &mut impl EventHandler) -> GameResult<()> {
 }
 
 fn main() {
-    // VisGame::new().run().unwrap();
-    NNVisGame::new().run().unwrap();
-    // let nn = NN::new(&[4, 10, 6]);
-    // let out = nn.apply(&[1., 2., 3., 4.]);
-    // println!("{:?}", out);
+    VisGame::new().run().unwrap();
+    // NNVisGame::new().run().unwrap();
 }
