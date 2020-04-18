@@ -15,13 +15,23 @@ use std::time::{Duration, Instant};
 use std::cmp::min;
 #[allow(unused_imports)]
 use tuple_map::*;
+use crate::{run_game, WINDOW_WIDTH, WINDOW_HEIGHT};
 
 // fresh indicates the key was just pressed (with iterations left to wait)
-#[derive(Debug, Eq, PartialEq)]
-enum PressedState {
+#[derive(Copy, Clone, Debug, Eq, PartialEq)]
+pub enum PressedState {
     Up,
     Down,
     Fresh(u8),
+}
+
+impl PressedState {
+    pub fn is_pressed(self) -> bool {
+        match self {
+            PressedState::Up => false,
+            _ => true,
+        }
+    }
 }
 
 enum Repeat {
@@ -31,43 +41,22 @@ enum Repeat {
     NoRepeat,
 }
 
-struct KeyInfo {
-    state: PressedState,
+pub struct KeyInfo {
+    pub state: PressedState,
     repeat: Repeat,
 }
 
-type Keys = HashMap<KeyCode, KeyInfo>;
+pub type Keys = HashMap<KeyCode, KeyInfo>;
 
 pub struct VisGame {
-    game: Game,
+    pub game: Game,
     paused: bool,
     next_frame: Instant,
-    keys: Keys,
+    pub keys: Keys,
 }
 
-const WINDOW_WIDTH: f32 = 1150.;
-const WINDOW_HEIGHT: f32 = 650.;
-
 impl VisGame {
-    pub fn run() {
-        let window_mode = WindowMode {
-            width: WINDOW_WIDTH,
-            height: WINDOW_HEIGHT,
-            maximized: false,
-            fullscreen_type: FullscreenType::Windowed,
-            borderless: false,
-            min_width: 0.0,
-            max_width: 0.0,
-            min_height: 0.0,
-            max_height: 0.0,
-            resizable: false,
-        };
-
-        let (ref mut ctx, ref mut event_loop) = ContextBuilder::new("my_game", "me")
-            .window_mode(window_mode)
-            .build()
-            .expect("failed to create context");
-
+    pub fn new() -> Self {
         let mut keys = Keys::new();
         keys.insert(
             KeyCode::Left,
@@ -134,14 +123,17 @@ impl VisGame {
                 repeat: Repeat::NoRepeat,
             },
         );
-        let mut game = Self {
+        Self {
             game: Game::new(),
             paused: false,
             next_frame: Instant::now(),
-            keys: keys,
-        };
+            keys,
+        }
+    }
 
-        ggez::event::run(ctx, event_loop, &mut game).expect("game exited unsuccessfully");
+    #[must_use]
+    pub fn run(&mut self) -> GameResult<()> {
+        run_game(self)
     }
 }
 
@@ -442,7 +434,7 @@ impl VisGame {
             builder.rectangle(
                 DrawMode::fill(),
                 rect,
-                if self.keys[&code].state != PressedState::Up {
+                if self.keys[&code].state.is_pressed() {
                     Color::from_rgb(181, 45, 45)
                 } else {
                     Color::from_rgb(102, 25, 25)

@@ -7,6 +7,7 @@ use std::fs::File;
 use std::io::{BufRead, BufReader};
 use std::path::Path;
 
+pub mod nn_visual;
 pub mod visual;
 
 type Mask = [[bool; 4]; 4];
@@ -250,6 +251,29 @@ impl Game {
             hold: None,
             can_switch: true,
         }
+    }
+
+    // return concatenated rows of cells, includes flying piece
+    pub fn get_cells(&self) -> Box<[f64]> {
+        // board
+        let mut cells = self.board
+            .iter()
+            .flat_map(|row| row.iter().map(|px| if px.is_empty() { 0. } else { 1. }))
+            .collect::<Vec<_>>()
+            .into_boxed_slice();
+        // flying piece
+        if let Some(flying) = &self.flying {
+            let mask = flying.mask;
+            for (rel_y, rel_x) in (0..4).cartesian_product(0..4) {
+                if mask[rel_y][rel_x] {
+                    let abs_y = rel_y as isize + flying.pos.1;
+                    let abs_x = rel_x as isize + flying.pos.0;
+                    cells[abs_y as usize * GAME_WIDTH + abs_x as usize] = 1.;
+                }
+            }
+        }
+
+        cells
     }
 
     fn spawn_with(&mut self, id: PieceId) {
