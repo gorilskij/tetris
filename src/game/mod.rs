@@ -25,9 +25,9 @@ struct FlyingPiece {
 // check whether the given mask at the given position intersects with any elements of the board
 // such as pixels or borders
 fn intersects_with(mask: &Mask, (x, y): (isize, isize), board: &Board) -> bool {
-    for rel_x in 0..4 {
-        for rel_y in 0..4 {
-            if mask[rel_y][rel_x] {
+    for (rel_y, row) in mask.iter().enumerate() {
+        for (rel_x, &val) in row.iter().enumerate() {
+            if val {
                 let abs_x = rel_x as isize + x;
                 let abs_y = rel_y as isize + y;
                 if abs_x < 0
@@ -36,10 +36,8 @@ fn intersects_with(mask: &Mask, (x, y): (isize, isize), board: &Board) -> bool {
                     || abs_y >= GAME_HEIGHT as isize
                 {
                     return true;
-                } else {
-                    if let Pixel::Full(_) = board[abs_y as usize][abs_x as usize] {
-                        return true;
-                    }
+                } else if let Pixel::Full(_) = board[abs_y as usize][abs_x as usize] {
+                    return true;
                 }
             }
         }
@@ -148,11 +146,11 @@ pub fn load_masks<P: AsRef<Path>>(path: P) -> MaskMap {
 
         // 4 masks, 4 lines, 4 values
         let mut masks = [[[false; 4]; 4]; 4];
-        for r in 0..4 {
-            for l in 0..4 {
-                let line: String = iter.take_while(|&c| c != '\n').collect();
-                for (v, c) in line.split("  ").enumerate() {
-                    masks[r][l][v] = match c {
+        for mask in masks.iter_mut() {
+            for line in mask.iter_mut() {
+                let l: String = iter.take_while(|&c| c != '\n').collect();
+                for (i, c) in l.split("  ").enumerate() {
+                    line[i] = match c {
                         "." => false,
                         "0" => true,
                         c => panic!("unexpected '{}'", c),
@@ -176,7 +174,7 @@ enum Pixel {
 }
 
 impl Pixel {
-    pub fn is_empty(&self) -> bool {
+    pub fn is_empty(self) -> bool {
         match self {
             Self::Empty => true,
             Self::Full(_) => false,
@@ -279,19 +277,31 @@ impl Game {
         cells
     }
 
-    fn spawn_with(&mut self, id: PieceId) {
-        self.flying = Some(FlyingPiece {
-            id,
-            pos: (GAME_WIDTH as isize / 2 - 2 /* width is 4 */, 0),
-            mask_idx: 0,
-            mask: self.mask_map[&id][0],
-            grace: 2,
-        });
+    fn lose(&self) {
+        panic!("Lost with {} points", self.points)
+    }
+
+    fn spawn_with_id(&mut self, id: PieceId) {
+        let pos = (GAME_WIDTH as isize / 2 - 2 /* width is 4 */, 0);
+        let mask_idx = 0;
+        let mask = self.mask_map[&id][mask_idx];
+
+        if intersects_with(&mask, pos, &self.board) {
+            self.lose()
+        } else {
+            self.flying = Some(FlyingPiece {
+                id,
+                pos,
+                mask_idx,
+                mask,
+                grace: 3,
+            })
+        }
     }
 
     fn spawn(&mut self) {
         let id = self.piece_queue.pop();
-        self.spawn_with(id)
+        self.spawn_with_id(id)
     }
 
     // print flying piece onto the board and destroy it (will be spawned next iteration)
@@ -414,7 +424,7 @@ impl Game {
                     .unwrap_or_else(|| self.piece_queue.pop()),
             );
             if let Some(id) = old {
-                self.spawn_with(id)
+                self.spawn_with_id(id)
             }
         }
     }

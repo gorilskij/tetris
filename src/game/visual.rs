@@ -131,7 +131,6 @@ impl VisGame {
         }
     }
 
-    #[must_use]
     pub fn run(&mut self) -> GameResult<()> {
         run_game(self)
     }
@@ -169,9 +168,9 @@ const SIDE: f32 = CELL_SIDE - 2. * MARGIN;
 impl VisGame {
     fn add_piece_at(&self, (vis_x, vis_y): (f32, f32), id: PieceId, builder: &mut MeshBuilder) {
         let mask = self.game.mask_map[&id][0];
-        for rel_y in 0..4 {
-            for rel_x in 0..4 {
-                if mask[rel_y][rel_x] {
+        for (rel_y, row) in mask.iter().enumerate() {
+            for (rel_x, &val) in row.iter().enumerate() {
+                if val {
                     let rect = Rect {
                         x: vis_x + rel_x as f32 * CELL_SIDE,
                         y: vis_y + rel_y as f32 * CELL_SIDE,
@@ -211,7 +210,6 @@ impl VisGame {
     }
 
     // return right
-    #[must_use]
     fn add_grid(&mut self, (left, top): (f32, f32), builder: &mut MeshBuilder) -> GameResult<f32> {
         for rel_x in 0..=GAME_WIDTH {
             let abs_x = left + rel_x as f32 * CELL_SIDE;
@@ -262,7 +260,6 @@ impl VisGame {
         }
     }
 
-    #[must_use]
     fn add_flying(&mut self, (left, top): (f32, f32), builder: &mut MeshBuilder) -> GameResult<()> {
         if let Some(flying) = self.game.flying.as_ref() {
             let mask = flying.mask;
@@ -369,9 +366,9 @@ impl VisGame {
             }
 
             // piece
-            for rel_y in 0..4 {
-                for rel_x in 0..4 {
-                    if mask[rel_y][rel_x] {
+            for (rel_y, row) in mask.iter().enumerate() {
+                for (rel_x, &val) in row.iter().enumerate() {
+                    if val {
                         let abs_y = (rel_y as isize + flying.pos.1) as usize;
                         let abs_x = (rel_x as isize + flying.pos.0) as usize;
                         let vis_y = top + abs_y as f32 * CELL_SIDE;
@@ -591,9 +588,8 @@ impl EventHandler for VisGame {
         }
 
         if !found {
-            match code {
-                KeyCode::Escape => self.paused = !self.paused,
-                _ => (),
+            if let KeyCode::Escape = code {
+                self.paused = !self.paused
             }
         }
     }

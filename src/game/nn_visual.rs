@@ -37,16 +37,26 @@ const KEY_ORDER: [KeyCode; 7] = [
     KeyCode::Space,
 ];
 
+fn print_out(label: &str, out: &[f64]) {
+    print!("{:>5}: [", label);
+    for n in out[..out.len() - 1].iter() {
+        print!("{:.2}, ", n);
+    }
+    println!("{:.2}]", out[out.len() - 1]);
+}
+
 impl EventHandler for NNVisGame {
     fn update(&mut self, ctx: &mut Context) -> GameResult<()> {
         println!("update");
         let input = self.vis.game.get_cells();
+        print_out("in", &input);
         let mut output = self.nn.apply(&input);
+        print_out("raw", &output);
         // normalize with sigmoid
         for out in output.iter_mut() {
             *out = 1. / (1. + (-*out).exp())
         }
-        println!("out: {:?}", output);
+        print_out("norm", &output);
         for (i, out) in output.iter_mut().enumerate() {
             let code = KEY_ORDER[i];
             let is_pressed = self.vis.keys[&code].state.is_pressed();
