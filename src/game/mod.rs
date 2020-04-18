@@ -7,6 +7,7 @@ use std::fs::File;
 use std::io::{BufRead, BufReader};
 use std::path::Path;
 
+mod nn_trainer_visual;
 pub mod nn_visual;
 pub mod visual;
 

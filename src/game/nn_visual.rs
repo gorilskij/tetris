@@ -1,6 +1,6 @@
 use crate::game::visual::VisGame;
 use crate::game::{GAME_HEIGHT, GAME_WIDTH};
-use crate::neural_network::NN;
+use crate::neural_network::{Activation, NN};
 use crate::run_game;
 use ggez::event::{EventHandler, KeyMods};
 use ggez::input::keyboard::KeyCode;
@@ -17,7 +17,13 @@ impl NNVisGame {
         Self {
             vis: VisGame::new(),
             // all cells as input, 7 keys as output
-            nn: NN::new(&[GAME_WIDTH * GAME_HEIGHT, 20, 10, 7]),
+            // nn: NN::new(&[GAME_WIDTH * GAME_HEIGHT, 20, 10, 7]),
+            nn: NN::make(GAME_WIDTH * GAME_HEIGHT)
+                .add_layer(20, Activation::Relu)
+                .add_layer(10, Activation::Relu)
+                .add_layer(7, Activation::Sigmoid)
+                .build()
+                .unwrap(),
         }
     }
 
@@ -27,7 +33,7 @@ impl NNVisGame {
     }
 }
 
-const KEY_ORDER: [KeyCode; 7] = [
+pub(crate) const KEY_ORDER: [KeyCode; 7] = [
     KeyCode::Up,
     KeyCode::Down,
     KeyCode::Left,

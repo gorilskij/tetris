@@ -56,6 +56,7 @@ pub struct VisGame {
 }
 
 impl VisGame {
+    #[allow(dead_code)]
     pub fn new() -> Self {
         let mut keys = Keys::new();
         keys.insert(
@@ -131,6 +132,7 @@ impl VisGame {
         }
     }
 
+    #[allow(dead_code)]
     pub fn run(&mut self) -> GameResult<()> {
         run_game(self)
     }

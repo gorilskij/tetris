@@ -39,6 +39,6 @@ pub fn run_game(eh: &mut impl EventHandler) -> GameResult<()> {
 }
 
 fn main() {
-    VisGame::new().run().unwrap();
-    // NNVisGame::new().run().unwrap();
+    // VisGame::new().run().unwrap();
+    NNVisGame::new().run().unwrap();
 }
