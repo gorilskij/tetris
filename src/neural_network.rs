@@ -116,7 +116,7 @@ impl NN {
     }
 
     pub fn apply(&self, input: &[f64]) -> Box<[f64]> {
-        println!("--start apply--");
+        // println!("--start apply--");
         assert_eq!(input.len(), self.layers[0].weights.ncols());
         let mut vec = DMatrix::from_column_slice(input.len(), 1, input);
         for Layer {
@@ -126,9 +126,9 @@ impl NN {
         {
             vec = weights * vec;
             vec.apply(activation.fnp);
-            print_out("inter", &vec);
+            // print_out("inter", &vec);
         }
-        println!("-- end --");
+        // println!("-- end --");
         vec.iter().copied().collect::<Vec<_>>().into_boxed_slice()
     }
 }
@@ -209,7 +209,7 @@ impl NN {
     }
 
     #[allow(dead_code)]
-    pub fn read_in<P: AsRef<Path>>(&self, path: P) -> NNReadResult<Self> {
+    pub fn read_in<P: AsRef<Path>>(path: P) -> NNReadResult<Self> {
         let mut br = BufReader::new(File::open(path)?);
         let num_layers = {
             let mut line = String::new();

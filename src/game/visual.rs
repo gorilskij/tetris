@@ -50,7 +50,7 @@ pub type Keys = HashMap<KeyCode, KeyInfo>;
 
 pub struct VisGame {
     pub game: Game,
-    paused: bool,
+    pub paused: bool,
     next_frame: Instant,
     pub keys: Keys,
 }

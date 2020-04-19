@@ -1,32 +1,30 @@
 use crate::game::nn_visual::KEY_ORDER;
 use crate::game::visual::{PressedState, VisGame};
 use crate::game::{GAME_HEIGHT, GAME_WIDTH};
-use crate::neural_network::{ActivationType, NN};
+use crate::neural_network::{ActivationType, NN, NNReadResult};
 use crate::run_game;
 use ggez::event::{EventHandler, KeyMods};
 use ggez::input::keyboard::KeyCode;
 use ggez::{Context, GameResult};
+use std::path::Path;
 
-pub struct NNTrainer {
+pub struct NNTrainer<'a> {
+    file_path: &'a Path,
     vis: VisGame,
     nn: NN,
     manual_control: bool,
 }
 
-impl NNTrainer {
+impl<'a> NNTrainer<'a> {
     #[allow(dead_code)]
-    pub fn new() -> Self {
-        Self {
+    pub fn new(file_path: &'a Path) -> NNReadResult<Self> {
+        let nn = NN::read_in(file_path)?;
+        Ok(Self {
+            file_path,
             vis: VisGame::new(),
-            // all cells as input, 7 keys as output
-            nn: NN::make(GAME_WIDTH * GAME_HEIGHT)
-                .add_layer(20, ActivationType::Relu)
-                .add_layer(10, ActivationType::Relu)
-                .add_layer(7, ActivationType::Sigmoid)
-                .build()
-                .unwrap(),
+            nn,
             manual_control: true,
-        }
+        })
     }
 
     #[allow(dead_code)]
@@ -35,7 +33,7 @@ impl NNTrainer {
     }
 }
 
-impl EventHandler for NNTrainer {
+impl EventHandler for NNTrainer<'_> {
     fn update(&mut self, ctx: &mut Context) -> GameResult<()> {
         let input = self.vis.game.get_cells();
         let nn_output = self.nn.apply(&input);
@@ -77,21 +75,31 @@ impl EventHandler for NNTrainer {
         keymods: KeyMods,
         repeat: bool,
     ) {
-        if keycode == KeyCode::LShift {
-            self.manual_control = !self.manual_control;
-            // clear keys
-            for (_, k) in self.vis.keys.iter_mut() {
-                k.state = PressedState::Up
+        if keycode == KeyCode::Escape {
+            self.vis.key_down_event(ctx, keycode, keymods, repeat);
+        } else if self.vis.paused {
+            if keycode == KeyCode::LShift {
+                self.manual_control = !self.manual_control;
+                // clear keys
+                for (_, k) in self.vis.keys.iter_mut() {
+                    k.state = PressedState::Up
+                }
+                println!("control: {}", if self.manual_control { "manual" } else { "neural" });
+            } else if keycode == KeyCode::LControl {
+                self.nn.write_out(self.file_path).unwrap();
+                println!("saved nn in \"{}\"", self.file_path.display());
             }
-        } else if self.manual_control {
-            self.vis.key_down_event(ctx, keycode, keymods, repeat)
         } else {
-            println!("warning: manual key_down ignored")
+            if self.manual_control {
+                self.vis.key_down_event(ctx, keycode, keymods, repeat);
+            } else {
+                println!("warning: key_down ignored because under neural control");
+            }
         }
     }
 
     fn key_up_event(&mut self, ctx: &mut Context, keycode: KeyCode, keymods: KeyMods) {
-        if self.manual_control {
+        if keycode == KeyCode::Escape || self.manual_control {
             self.vis.key_up_event(ctx, keycode, keymods)
         } else {
             println!("warning: manual key_up ignored")

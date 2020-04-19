@@ -10,6 +10,7 @@ use crate::game::visual::VisGame;
 use ggez::conf::{FullscreenType, WindowMode};
 use ggez::event::EventHandler;
 use ggez::{ContextBuilder, GameResult};
+use crate::neural_network::NNReadResult;
 
 pub(crate) mod game;
 pub(crate) mod neural_network;
@@ -43,5 +44,5 @@ pub fn run_game(eh: &mut impl EventHandler) -> GameResult<()> {
 fn main() {
     // VisGame::new().run().unwrap();
     // NNVisGame::new().run().unwrap();
-    NNTrainer::new().run().unwrap();
+    NNTrainer::new("saved_nn.txt".as_ref()).unwrap().run().unwrap()
 }
