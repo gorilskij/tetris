@@ -165,17 +165,19 @@ pub type NNReadResult<T> = Result<T, NNReadError>;
 fn test_nn_serialization() {
     use crate::{
         game::{GAME_HEIGHT, GAME_WIDTH},
-        neural_network::{Activation, NN},
+        neural_network::{ActivationType, NN},
     };
     let nn = NN::make(GAME_WIDTH * GAME_HEIGHT)
-        .add_layer(20, Activation::Relu)
-        .add_layer(10, Activation::Relu)
-        .add_layer(7, Activation::Sigmoid)
+        .add_layer(20, ActivationType::Relu)
+        .add_layer(10, ActivationType::Relu)
+        .add_layer(7, ActivationType::Sigmoid)
         .build()
         .unwrap();
-    nn.write_out("saved_nn.txt").unwrap();
-    let read = nn.read_in("saved_nn.txt").unwrap();
+    let file_path = "temporary_test_nn.txt";
+    nn.write_out(file_path).unwrap();
+    let read = nn.read_in(file_path).unwrap();
     assert!(nn == read);
+    std::fs::remove_file(file_path).unwrap();
 }
 
 impl NN {
