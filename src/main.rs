@@ -1,6 +1,8 @@
 #![feature(stmt_expr_attributes)] // for fine-grained rustfmt control
 
 #[allow(unused_imports)]
+use crate::game::nn_trainer::NNTrainer;
+#[allow(unused_imports)]
 use crate::game::nn_visual::NNVisGame;
 #[allow(unused_imports)]
 use crate::game::visual::VisGame;
@@ -40,5 +42,6 @@ pub fn run_game(eh: &mut impl EventHandler) -> GameResult<()> {
 
 fn main() {
     // VisGame::new().run().unwrap();
-    NNVisGame::new().run().unwrap();
+    // NNVisGame::new().run().unwrap();
+    NNTrainer::new().run().unwrap();
 }
