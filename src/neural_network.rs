@@ -6,6 +6,7 @@ use std::io;
 use std::io::{BufRead, BufReader, Error, LineWriter, Write};
 use std::num::{ParseFloatError, ParseIntError};
 use std::path::Path;
+use std::iter::once;
 
 fn relu_activation(x: f64) -> f64 {
     if x < 0. {
@@ -82,7 +83,7 @@ pub struct NNCreationError(String);
 impl NNBuilder {
     pub fn add_layer(mut self, size: usize, activation_type: ActivationType) -> Self {
         self.layers.push(Layer {
-            weights: gen_weights(self.last_size, size, &mut self.rng),
+            weights: gen_weights(self.last_size + 1 /* bias */, size, &mut self.rng),
             activation: Activation {
                 typ: activation_type,
                 fnp: activation_type.fn_ptr(),
@@ -115,21 +116,25 @@ impl NN {
         }
     }
 
-    pub fn apply(&self, input: &[f64]) -> Box<[f64]> {
+    pub fn apply(&self, input: &[f64]) -> DMatrix<f64> {
         // println!("--start apply--");
-        assert_eq!(input.len(), self.layers[0].weights.ncols());
-        let mut vec = DMatrix::from_column_slice(input.len(), 1, input);
+        assert_eq!(input.len() + 1, self.layers[0].weights.ncols());
+        let mut data = DMatrix::from_iterator(input.len(), 1, input.iter().copied());
         for Layer {
             weights,
             activation,
         } in self.layers.iter()
         {
-            vec = weights * vec;
-            vec.apply(activation.fnp);
+            // insert bias as first element
+            data = data.insert_row(0, 1.);
+
+            data = weights * data;
+            data.apply(activation.fnp);
             // print_out("inter", &vec);
         }
         // println!("-- end --");
-        vec.iter().copied().collect::<Vec<_>>().into_boxed_slice()
+        // data.iter().copied().collect::<Vec<_>>().into_boxed_slice()
+        data
     }
 }
 
@@ -175,7 +180,7 @@ fn test_nn_serialization() {
         .unwrap();
     let file_path = "temporary_test_nn.txt";
     nn.write_out(file_path).unwrap();
-    let read = nn.read_in(file_path).unwrap();
+    let read = NN::read_in(file_path).unwrap();
     assert!(nn == read);
     std::fs::remove_file(file_path).unwrap();
 }
@@ -283,6 +288,7 @@ impl NN {
                 layers.len()
             )));
         }
+
         Ok(Self {
             layers: layers.into_boxed_slice(),
         })
