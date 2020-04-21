@@ -1,7 +1,6 @@
 use crate::game::nn_visual::KEY_ORDER;
 use crate::game::visual::{PressedState, VisGame};
-use crate::game::{GAME_HEIGHT, GAME_WIDTH};
-use crate::neural_network::{ActivationType, NN, NNReadResult};
+use crate::neural_network::{NNReadResult, NN};
 use crate::run_game;
 use ggez::event::{EventHandler, KeyMods};
 use ggez::input::keyboard::KeyCode;
@@ -84,17 +83,22 @@ impl EventHandler for NNTrainer<'_> {
                 for (_, k) in self.vis.keys.iter_mut() {
                     k.state = PressedState::Up
                 }
-                println!("control: {}", if self.manual_control { "manual" } else { "neural" });
+                println!(
+                    "control: {}",
+                    if self.manual_control {
+                        "manual"
+                    } else {
+                        "neural"
+                    }
+                );
             } else if keycode == KeyCode::LControl {
                 self.nn.write_out(self.file_path).unwrap();
                 println!("saved nn in \"{}\"", self.file_path.display());
             }
+        } else if self.manual_control {
+            self.vis.key_down_event(ctx, keycode, keymods, repeat);
         } else {
-            if self.manual_control {
-                self.vis.key_down_event(ctx, keycode, keymods, repeat);
-            } else {
-                println!("warning: key_down ignored because under neural control");
-            }
+            println!("warning: key_down ignored because under neural control");
         }
     }
 

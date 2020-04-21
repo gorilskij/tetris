@@ -7,11 +7,13 @@ use crate::game::nn_visual::NNVisGame;
 #[allow(unused_imports)]
 use crate::game::visual::VisGame;
 
+#[allow(unused_imports)]
+use crate::game::{GAME_HEIGHT, GAME_WIDTH};
+#[allow(unused_imports)]
+use crate::neural_network::{ActivationType, NNReadResult, NN};
 use ggez::conf::{FullscreenType, WindowMode};
 use ggez::event::EventHandler;
 use ggez::{ContextBuilder, GameResult};
-use crate::neural_network::{NNReadResult, NN, ActivationType};
-use crate::game::{GAME_WIDTH, GAME_HEIGHT};
 
 pub(crate) mod game;
 pub(crate) mod neural_network;
@@ -45,7 +47,10 @@ pub fn run_game(eh: &mut impl EventHandler) -> GameResult<()> {
 fn main() {
     // VisGame::new().run().unwrap();
     // NNVisGame::new().run().unwrap();
-    NNTrainer::new("saved_nn.txt".as_ref()).unwrap().run().unwrap()
+    NNTrainer::new("saved_nn.txt".as_ref())
+        .unwrap()
+        .run()
+        .unwrap()
 
     // NN::make(GAME_WIDTH * GAME_HEIGHT)
     //     .add_layer(20, ActivationType::Relu)

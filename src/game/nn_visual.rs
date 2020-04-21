@@ -56,7 +56,13 @@ impl EventHandler for NNVisGame {
         println!("update");
         let input = self.vis.game.get_cells();
         print_out("in", &input);
-        let mut output = self.nn.apply(&input).iter().copied().collect::<Vec<_>>().into_boxed_slice();
+        let mut output = self
+            .nn
+            .apply(&input)
+            .iter()
+            .copied()
+            .collect::<Vec<_>>()
+            .into_boxed_slice();
         print_out("raw", &output);
         // normalize with sigmoid
         for out in output.iter_mut() {

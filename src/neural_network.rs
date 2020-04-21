@@ -6,7 +6,6 @@ use std::io;
 use std::io::{BufRead, BufReader, Error, LineWriter, Write};
 use std::num::{ParseFloatError, ParseIntError};
 use std::path::Path;
-use std::iter::once;
 
 fn relu_activation(x: f64) -> f64 {
     if x < 0. {
