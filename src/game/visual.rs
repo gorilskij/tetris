@@ -420,7 +420,7 @@ impl VisGame {
         builder: &mut MeshBuilder,
         ctx: &mut Context,
     ) -> f32 {
-        let height = 5. * CELL_SIDE;
+        let height = 6. * CELL_SIDE;
         let bg_rect = Rect {
             x: left,
             y: top,
@@ -455,6 +455,17 @@ impl VisGame {
             Point2 {
                 x: left + CELL_SIDE,
                 y: top + 3. * CELL_SIDE,
+            },
+            Some(WHITE),
+        );
+        // fps
+        let fps = ggez::timer::fps(ctx);
+        queue_text(
+            ctx,
+            &Text::new(format!("{:>3} fps", fps as u32)),
+            Point2 {
+                x: left + CELL_SIDE,
+                y: top + 4. * CELL_SIDE,
             },
             Some(WHITE),
         );
