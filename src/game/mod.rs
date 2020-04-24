@@ -2,10 +2,12 @@ use ggez::graphics::Color;
 use itertools::Itertools;
 use no_comment::IntoWithoutComments;
 use rand::prelude::*;
+use std::cmp::{max, min};
 use std::collections::{HashMap, VecDeque};
 use std::fs::File;
 use std::io::{BufRead, BufReader};
 use std::path::Path;
+use tap::TapOps;
 
 pub(crate) mod nn_trainer;
 pub mod nn_visual;
@@ -20,7 +22,9 @@ struct FlyingPiece {
     pos: (isize, isize), // top-left corner
     mask_idx: usize,
     mask: Mask, // cached
-    grace: u8,  // grace period to avoid respawning as soon as the piece touches the ground
+
+    lock_delay: u8,
+    lock_delay_resets: u8,
 }
 
 // check whether the given mask at the given position intersects with any elements of the board
@@ -72,6 +76,16 @@ impl FlyingPiece {
                     }
                 }
             }
+        }
+    }
+
+    const LOCK_DELAY: u8 = 5;
+
+    fn reset_lock_delay(&mut self) {
+        // only does anything if self.lock_delay_resets > 0
+        if self.lock_delay_resets > 0 {
+            self.lock_delay = Self::LOCK_DELAY;
+            self.lock_delay_resets -= 1;
         }
     }
 }
@@ -230,6 +244,8 @@ pub struct Game {
     mask_map: MaskMap,
     tick: usize, // frame tick tied to fps (== number of vis frames)
     points: usize,
+    level: usize,
+    cleared: usize, // number of rows cleared so far
 
     board: Board,
     piece_queue: PieceQueue,
@@ -245,6 +261,8 @@ impl Game {
             mask_map: load_masks("masks.txt"),
             tick: 0,
             points: 0,
+            level: 1,
+            cleared: 0,
 
             board,
             piece_queue: PieceQueue::new(),
@@ -252,6 +270,7 @@ impl Game {
             hold: None,
             can_switch: true,
         }
+        .tap(Game::spawn)
     }
 
     // return concatenated rows of cells, includes flying piece
@@ -279,7 +298,10 @@ impl Game {
     }
 
     fn lose(&self) {
-        panic!("Lost with {} points", self.points)
+        panic!(
+            "Lost {{ points: {}, level: {}, cleared: {} }}",
+            self.points, self.level, self.cleared
+        )
     }
 
     fn spawn_with_id(&mut self, id: PieceId) {
@@ -295,7 +317,8 @@ impl Game {
                 pos,
                 mask_idx,
                 mask,
-                grace: 3,
+                lock_delay: FlyingPiece::LOCK_DELAY,
+                lock_delay_resets: 4,
             })
         }
     }
@@ -306,10 +329,11 @@ impl Game {
     }
 
     // print flying piece onto the board and destroy it (will be spawned next iteration)
-    fn destroy_flying(&mut self) {
+    fn destroy_flying_and_respawn(&mut self) {
         self.flying.as_mut().unwrap().print_onto(&mut self.board);
         self.flying = None;
         self.can_switch = true;
+        self.spawn();
     }
 
     // might get called twice but that shouldn't matter
@@ -324,33 +348,60 @@ impl Game {
                 self.board[y] = [Pixel::Empty; GAME_WIDTH];
             }
         }
-        self.points += match shift_up {
-            0 => 0,
-            1 => 40,
-            2 => 100,
-            3 => 300,
-            4 => 1200,
-            n => panic!("unexpected {} lines cleared", n),
-        }
+        // at this point shift_up == number of rows cleared
+        self.cleared += shift_up;
+        // level goes up every ten lines
+        self.level = (self.cleared / 10) + 1;
+        self.points += self.level
+            * match shift_up {
+                0 => 0,
+                1 => 40,
+                2 => 100,
+                3 => 300,
+                4 => 1200,
+                n => panic!("unexpected {} lines cleared", n),
+            }
     }
 
     pub fn iterate(&mut self) {
         self.compact_board();
 
+        // rows to fall per frame, assumes 60 fps (levels 1-15+)
+        const ROWS_PER_FRAME: [f32; 15] = #[rustfmt::skip] [
+            0.01667,
+            0.021_017,
+            0.026_977,
+            0.035_256,
+            0.04693,
+            0.06361,
+            0.0879,
+            0.1236,
+            0.1775,
+            0.2598,
+            0.388,
+            0.59,
+            0.92,
+            1.46,
+            2.36,
+        ];
+
+        let rows_per_frame = ROWS_PER_FRAME[min(self.level, 15) - 1];
+        let frames_per_row = max(1, (1. / rows_per_frame) as _);
+
         // every 15 frames iterate flying piece
-        if self.tick % 15 == 0 {
+        if self.tick % frames_per_row == 0 {
             if let Some(ref mut flying) = self.flying {
                 if flying.is_touching_ground(&self.board) {
-                    if flying.grace == 0 {
-                        self.destroy_flying();
+                    if flying.lock_delay == 0 {
+                        self.destroy_flying_and_respawn();
                     } else {
-                        flying.grace -= 1;
+                        flying.lock_delay -= 1;
                     }
                 } else {
                     flying.pos.1 += 1;
                 }
             } else {
-                self.spawn()
+                panic!("no flying piece")
             }
         }
 
@@ -360,13 +411,16 @@ impl Game {
 
 // control
 impl Game {
-    pub fn teleport_flying_piece(&mut self, dx: isize, dy: isize) {
+    pub fn move_flying_piece(&mut self, dx: isize, dy: isize) {
         if let Some(ref mut flying) = self.flying {
             let mask = &self.mask_map[&flying.id][flying.mask_idx];
             let new_pos = (flying.pos.0 as isize + dx, flying.pos.1 as isize + dy);
             if !intersects_with(mask, new_pos, &self.board) {
                 flying.pos = new_pos;
             }
+            flying.reset_lock_delay();
+        } else {
+            panic!("tried to move with no flying piece")
         }
     }
 
@@ -377,6 +431,7 @@ impl Game {
             let new_mask = self.mask_map[&flying.id][new_idx];
             // sometimes it's necessary to shift a bit when rotating, this is so
             // that rotation isn't blocked when touching the ground or next to a wall
+            let mut success = false;
             for (dx, dy) in #[rustfmt::skip] &[
                     (0, 0),
                     (0, -1), (0, -2), // up
@@ -390,9 +445,15 @@ impl Game {
                     flying.pos = pos;
                     flying.mask_idx = new_idx;
                     flying.mask = new_mask;
+                    success = true;
                     break;
                 }
             }
+            if success {
+                flying.reset_lock_delay();
+            }
+        } else {
+            panic!("tried to rotate with no flying piece")
         }
     }
 
@@ -400,7 +461,8 @@ impl Game {
     pub fn hard_drop(&mut self) {
         self.compact_board();
         if self.flying.is_none() {
-            self.spawn();
+            // self.spawn();
+            panic!("attempted to hard drop with no flying piece")
         }
         let flying = self.flying.as_mut().unwrap();
         let mask = &flying.mask;
@@ -410,7 +472,7 @@ impl Game {
             delta += 1
         }
         flying.pos = (pos.0, pos.1 + delta as isize);
-        self.destroy_flying();
+        self.destroy_flying_and_respawn();
         self.points += delta + 1;
     }
 
@@ -422,10 +484,12 @@ impl Game {
                 self.flying
                     .take()
                     .map(|fp| fp.id)
-                    .unwrap_or_else(|| self.piece_queue.pop()),
+                    .expect("tried to swap with no flying piece"),
             );
             if let Some(id) = old {
                 self.spawn_with_id(id)
+            } else {
+                self.spawn()
             }
         }
     }

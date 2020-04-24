@@ -6,6 +6,7 @@ use ggez::event::{EventHandler, KeyMods};
 use ggez::input::keyboard::KeyCode;
 use ggez::{Context, GameResult};
 
+// don't know how useful this actually is
 pub struct NNVisGame {
     vis: VisGame,
     nn: NN,

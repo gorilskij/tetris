@@ -85,7 +85,7 @@ impl VisGame {
                 state: PressedState::Up,
                 repeat: Repeat::Repeat {
                     initial_delay: 0,
-                    delay: 4,
+                    delay: 3,
                 },
             },
         );
@@ -150,9 +150,9 @@ impl VisGame {
     // unconditional
     fn do_key_action(&mut self, code: KeyCode) {
         match code {
-            KeyCode::Left => self.game.teleport_flying_piece(-1, 0),
-            KeyCode::Right => self.game.teleport_flying_piece(1, 0),
-            KeyCode::Down => self.game.teleport_flying_piece(0, 1),
+            KeyCode::Left => self.game.move_flying_piece(-1, 0),
+            KeyCode::Right => self.game.move_flying_piece(1, 0),
+            KeyCode::Down => self.game.move_flying_piece(0, 1),
             KeyCode::Up => self.game.rotate_flying_piece(1),
             KeyCode::RShift => self.game.rotate_flying_piece(-1),
             KeyCode::Space => self.game.hard_drop(),
@@ -414,13 +414,13 @@ impl VisGame {
         left + width
     }
 
-    fn add_points(
+    fn add_text_info(
         &self,
         (left, top): (f32, f32),
         builder: &mut MeshBuilder,
         ctx: &mut Context,
     ) -> f32 {
-        let height = 4. * CELL_SIDE;
+        let height = 5. * CELL_SIDE;
         let bg_rect = Rect {
             x: left,
             y: top,
@@ -428,13 +428,33 @@ impl VisGame {
             h: height,
         };
         builder.rectangle(DrawMode::fill(), bg_rect, Color::from_rgb(56, 56, 56));
-
+        // points
         queue_text(
             ctx,
             &Text::new(format!("{}", self.game.points)),
             Point2 {
                 x: left + CELL_SIDE,
                 y: top + CELL_SIDE,
+            },
+            Some(WHITE),
+        );
+        // level
+        queue_text(
+            ctx,
+            &Text::new(format!("Level {}", self.game.level)),
+            Point2 {
+                x: left + CELL_SIDE,
+                y: top + 2. * CELL_SIDE,
+            },
+            Some(WHITE),
+        );
+        // lines cleared
+        queue_text(
+            ctx,
+            &Text::new(format!("Cleared: {}", self.game.cleared)),
+            Point2 {
+                x: left + CELL_SIDE,
+                y: top + 3. * CELL_SIDE,
             },
             Some(WHITE),
         );
@@ -557,7 +577,7 @@ impl EventHandler for VisGame {
             self.add_flying(pos, &mut builder)?;
 
             let right = self.add_queue((right + SPACE_BETWEEN, TOP_MARGIN), &mut builder);
-            let bottom = self.add_points((right + SPACE_BETWEEN, TOP_MARGIN), &mut builder, ctx);
+            let bottom = self.add_text_info((right + SPACE_BETWEEN, TOP_MARGIN), &mut builder, ctx);
             self.add_keys(
                 (right + SPACE_BETWEEN, bottom + SPACE_BETWEEN),
                 &mut builder,

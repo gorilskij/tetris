@@ -56,14 +56,6 @@ pub struct NN {
     layers: Box<[Layer]>,
 }
 
-fn print_out(label: &str, out: &DMatrix<f64>) {
-    print!("{:>5}: [", label);
-    for n in out.iter() {
-        print!("{:.2}, ", n);
-    }
-    println!("]");
-}
-
 pub struct NNBuilder {
     last_size: usize,
     layers: Vec<Layer>,
@@ -116,7 +108,6 @@ impl NN {
     }
 
     pub fn apply(&self, input: &[f64]) -> DMatrix<f64> {
-        // println!("--start apply--");
         assert_eq!(input.len() + 1, self.layers[0].weights.ncols());
         let mut data = DMatrix::from_iterator(input.len(), 1, input.iter().copied());
         for Layer {
@@ -129,10 +120,7 @@ impl NN {
 
             data = weights * data;
             data.apply(activation.fnp);
-            // print_out("inter", &vec);
         }
-        // println!("-- end --");
-        // data.iter().copied().collect::<Vec<_>>().into_boxed_slice()
         data
     }
 }
