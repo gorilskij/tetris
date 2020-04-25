@@ -156,11 +156,11 @@ impl VisGame {
     // unconditional
     fn do_key_action(&mut self, code: KeyCode) {
         match code {
-            KeyCode::Left => self.game.move_flying_piece(-1, 0),
-            KeyCode::Right => self.game.move_flying_piece(1, 0),
-            KeyCode::Down => self.game.move_flying_piece(0, 1),
-            KeyCode::Up => self.game.rotate_flying_piece(1),
-            KeyCode::RShift => self.game.rotate_flying_piece(-1),
+            KeyCode::Left => self.game.move_falling_piece(-1, 0),
+            KeyCode::Right => self.game.move_falling_piece(1, 0),
+            KeyCode::Down => self.game.move_falling_piece(0, 1),
+            KeyCode::Up => self.game.rotate_falling_piece(1),
+            KeyCode::RShift => self.game.rotate_falling_piece(-1),
             KeyCode::Space => self.game.hard_drop(),
             KeyCode::J => self.game.switch_hold(),
             KeyCode::Escape => self.paused = !self.paused,
@@ -268,20 +268,20 @@ impl VisGame {
         }
     }
 
-    fn add_flying(&mut self, (left, top): (f32, f32), builder: &mut MeshBuilder) -> GameResult<()> {
-        if let Some(flying) = self.game.flying.as_ref() {
-            let mask = flying.mask;
+    fn add_falling(&mut self, (left, top): (f32, f32), builder: &mut MeshBuilder) -> GameResult<()> {
+        if let Some(falling) = self.game.falling.as_ref() {
+            let mask = falling.mask;
 
             // shadow
-            if let Some(lowest_y) = (flying.pos.1 + 1..GAME_HEIGHT as isize)
-                .take_while(|&i| !intersects_with(&mask, (flying.pos.0, i), &self.game.board))
+            if let Some(lowest_y) = (falling.pos.1 + 1..GAME_HEIGHT as isize)
+                .take_while(|&i| !intersects_with(&mask, (falling.pos.0, i), &self.game.board))
                 .last()
             {
                 for rel_y in 0..4 {
                     for rel_x in 0..4 {
                         if mask[rel_y][rel_x] {
                             let abs_y = (rel_y as isize + lowest_y) as usize;
-                            let abs_x = (rel_x as isize + flying.pos.0) as usize;
+                            let abs_x = (rel_x as isize + falling.pos.0) as usize;
                             let vis_y = top + abs_y as f32 * CELL_SIDE;
                             let vis_x = left + abs_x as f32 * CELL_SIDE;
 
@@ -292,10 +292,10 @@ impl VisGame {
                             //     w: SIDE,
                             //     h: SIDE,
                             // };
-                            // builder.rectangle(DrawMode::stroke(3.), rect, flying.id.color());
+                            // builder.rectangle(DrawMode::stroke(3.), rect, falling.id.color());
 
                             // fainter color (looks bad)
-                            // let rgb = flying.id.color().to_rgb();
+                            // let rgb = falling.id.color().to_rgb();
                             // let increase_possible = rgb.map(|x| 255. / x as f32);
                             // let min_increase_possible = increase_possible.tmin();
                             // let (r, g, b) = rgb.map(|x| {
@@ -305,7 +305,7 @@ impl VisGame {
                             // builder.rectangle(DrawMode::fill(), rect, Color::from_rgb(r, g, b));
 
                             // full block outline
-                            let color = flying.id.color();
+                            let color = falling.id.color();
                             if rel_y == 0 || !mask[rel_y - 1][rel_x] {
                                 // top line
                                 builder.line(
@@ -377,8 +377,8 @@ impl VisGame {
             for (rel_y, row) in mask.iter().enumerate() {
                 for (rel_x, &val) in row.iter().enumerate() {
                     if val {
-                        let abs_y = (rel_y as isize + flying.pos.1) as usize;
-                        let abs_x = (rel_x as isize + flying.pos.0) as usize;
+                        let abs_y = (rel_y as isize + falling.pos.1) as usize;
+                        let abs_x = (rel_x as isize + falling.pos.0) as usize;
                         let vis_y = top + abs_y as f32 * CELL_SIDE;
                         let vis_x = left + abs_x as f32 * CELL_SIDE;
                         let rect = Rect {
@@ -390,7 +390,7 @@ impl VisGame {
                         builder.rectangle(
                             DrawMode::Fill(FillOptions::default()),
                             rect,
-                            flying.id.color(),
+                            falling.id.color(),
                         );
                     }
                 }
@@ -591,7 +591,7 @@ impl EventHandler for VisGame {
             let pos = (right + SPACE_BETWEEN, TOP_MARGIN);
             let right = self.add_grid(pos, &mut builder)?;
             self.add_pixels(pos, &mut builder);
-            self.add_flying(pos, &mut builder)?;
+            self.add_falling(pos, &mut builder)?;
 
             let right = self.add_queue((right + SPACE_BETWEEN, TOP_MARGIN), &mut builder);
             let bottom = self.add_text_info((right + SPACE_BETWEEN, TOP_MARGIN), &mut builder, ctx);

@@ -50,10 +50,10 @@ pub fn run_game(eh: &mut impl EventHandler) -> GameResult<()> {
 }
 
 fn main() {
-    // VisGame::new().run().unwrap();
+    VisGame::new().run().unwrap(); // playable game
     // NNVisGame::new().run().unwrap();
-    NNTrainer::new("data/saved_gen.txt".as_ref())
-        .expect("failed to create nn_trainer")
-        .run()
-        .unwrap()
+    // NNTrainer::new("data/saved_gen.txt".as_ref())
+    //     .expect("failed to create nn_trainer")
+    //     .run()
+    //     .unwrap()
 }

@@ -19,7 +19,7 @@ type Mask = [[bool; 4]; 4];
 type Masks = [Mask; 4];
 type MaskMap = HashMap<PieceId, Masks>;
 
-struct FlyingPiece {
+struct FallingPiece {
     id: PieceId,
     pos: (isize, isize), // top-left corner
     mask_idx: usize,
@@ -52,7 +52,7 @@ fn intersects_with(mask: &Mask, (x, y): (isize, isize), board: &Board) -> bool {
     false
 }
 
-impl FlyingPiece {
+impl FallingPiece {
     // ground is positive y!
     fn is_touching_ground(&self, board: &Board) -> bool {
         intersects_with(
@@ -251,7 +251,7 @@ pub struct Game {
 
     board: Board,
     piece_queue: PieceQueue,
-    flying: Option<FlyingPiece>,
+    falling: Option<FallingPiece>,
     hold: Option<PieceId>,
     can_switch: bool, // to prevent double-switching hold
 }
@@ -268,14 +268,14 @@ impl Game {
 
             board,
             piece_queue: PieceQueue::new(),
-            flying: None,
+            falling: None,
             hold: None,
             can_switch: true,
         }
         .tap(Game::spawn)
     }
 
-    // return concatenated rows of cells, includes flying piece
+    // return concatenated rows of cells, includes falling piece
     pub fn get_cells(&self) -> Box<[f64]> {
         // board
         let mut cells = self
@@ -284,13 +284,13 @@ impl Game {
             .flat_map(|row| row.iter().map(|px| if px.is_empty() { 0. } else { 1. }))
             .collect::<Vec<_>>()
             .into_boxed_slice();
-        // flying piece
-        if let Some(flying) = &self.flying {
-            let mask = flying.mask;
+        // falling piece
+        if let Some(falling) = &self.falling {
+            let mask = falling.mask;
             for (rel_y, rel_x) in (0..4).cartesian_product(0..4) {
                 if mask[rel_y][rel_x] {
-                    let abs_y = rel_y as isize + flying.pos.1;
-                    let abs_x = rel_x as isize + flying.pos.0;
+                    let abs_y = rel_y as isize + falling.pos.1;
+                    let abs_x = rel_x as isize + falling.pos.0;
                     cells[abs_y as usize * GAME_WIDTH + abs_x as usize] = 1.;
                 }
             }
@@ -314,12 +314,12 @@ impl Game {
         if intersects_with(&mask, pos, &self.board) {
             self.lose()
         } else {
-            self.flying = Some(FlyingPiece {
+            self.falling = Some(FallingPiece {
                 id,
                 pos,
                 mask_idx,
                 mask,
-                lock_delay: FlyingPiece::LOCK_DELAY,
+                lock_delay: FallingPiece::LOCK_DELAY,
                 lock_delay_resets: 4,
             })
         }
@@ -330,10 +330,10 @@ impl Game {
         self.spawn_with_id(id)
     }
 
-    // print flying piece onto the board and destroy it (will be spawned next iteration)
-    fn destroy_flying_and_respawn(&mut self) {
-        self.flying.as_mut().unwrap().print_onto(&mut self.board);
-        self.flying = None;
+    // print falling piece onto the board and destroy it (will be spawned next iteration)
+    fn destroy_falling_and_respawn(&mut self) {
+        self.falling.as_mut().unwrap().print_onto(&mut self.board);
+        self.falling = None;
         self.can_switch = true;
         self.spawn();
     }
@@ -390,20 +390,20 @@ impl Game {
         let rows_per_frame = ROWS_PER_FRAME[min(self.level, 15) - 1];
         let frames_per_row = max(1, (1. / rows_per_frame) as _);
 
-        // every 15 frames iterate flying piece
+        // every 15 frames iterate falling piece
         if self.tick % frames_per_row == 0 {
-            if let Some(ref mut flying) = self.flying {
-                if flying.is_touching_ground(&self.board) {
-                    if flying.lock_delay == 0 {
-                        self.destroy_flying_and_respawn();
+            if let Some(ref mut falling) = self.falling {
+                if falling.is_touching_ground(&self.board) {
+                    if falling.lock_delay == 0 {
+                        self.destroy_falling_and_respawn();
                     } else {
-                        flying.lock_delay -= 1;
+                        falling.lock_delay -= 1;
                     }
                 } else {
-                    flying.pos.1 += 1;
+                    falling.pos.1 += 1;
                 }
             } else {
-                panic!("no flying piece")
+                panic!("no falling piece")
             }
         }
 
@@ -413,24 +413,24 @@ impl Game {
 
 // control
 impl Game {
-    pub fn move_flying_piece(&mut self, dx: isize, dy: isize) {
-        if let Some(ref mut flying) = self.flying {
-            let mask = &self.mask_map[&flying.id][flying.mask_idx];
-            let new_pos = (flying.pos.0 as isize + dx, flying.pos.1 as isize + dy);
+    pub fn move_falling_piece(&mut self, dx: isize, dy: isize) {
+        if let Some(ref mut falling) = self.falling {
+            let mask = &self.mask_map[&falling.id][falling.mask_idx];
+            let new_pos = (falling.pos.0 as isize + dx, falling.pos.1 as isize + dy);
             if !intersects_with(mask, new_pos, &self.board) {
-                flying.pos = new_pos;
+                falling.pos = new_pos;
             }
-            flying.reset_lock_delay();
+            falling.reset_lock_delay();
         } else {
-            panic!("tried to move with no flying piece")
+            panic!("tried to move with no falling piece")
         }
     }
 
-    pub fn rotate_flying_piece(&mut self, di: isize) {
+    pub fn rotate_falling_piece(&mut self, di: isize) {
         // +1 is 90° clockwise, -1 is 90° counterclockwise
-        if let Some(ref mut flying) = self.flying {
-            let new_idx = ((flying.mask_idx as isize + di % 4 + 4) % 4) as usize;
-            let new_mask = self.mask_map[&flying.id][new_idx];
+        if let Some(ref mut falling) = self.falling {
+            let new_idx = ((falling.mask_idx as isize + di % 4 + 4) % 4) as usize;
+            let new_mask = self.mask_map[&falling.id][new_idx];
             // sometimes it's necessary to shift a bit when rotating, this is so
             // that rotation isn't blocked when touching the ground or next to a wall
             let mut success = false;
@@ -442,39 +442,39 @@ impl Game {
                     (1, 0), (2, 0), // right
                 ]
             {
-                let pos = (flying.pos.0 + dx, flying.pos.1 + dy);
+                let pos = (falling.pos.0 + dx, falling.pos.1 + dy);
                 if !intersects_with(&new_mask, pos, &self.board) {
-                    flying.pos = pos;
-                    flying.mask_idx = new_idx;
-                    flying.mask = new_mask;
+                    falling.pos = pos;
+                    falling.mask_idx = new_idx;
+                    falling.mask = new_mask;
                     success = true;
                     break;
                 }
             }
             if success {
-                flying.reset_lock_delay();
+                falling.reset_lock_delay();
             }
         } else {
-            panic!("tried to rotate with no flying piece")
+            panic!("tried to rotate with no falling piece")
         }
     }
 
     // does scoring
     pub fn hard_drop(&mut self) {
         self.compact_board();
-        if self.flying.is_none() {
+        if self.falling.is_none() {
             // self.spawn();
-            panic!("attempted to hard drop with no flying piece")
+            panic!("attempted to hard drop with no falling piece")
         }
-        let flying = self.flying.as_mut().unwrap();
-        let mask = &flying.mask;
-        let pos = flying.pos;
+        let falling = self.falling.as_mut().unwrap();
+        let mask = &falling.mask;
+        let pos = falling.pos;
         let mut delta = 0;
         while !intersects_with(mask, (pos.0, pos.1 + delta as isize + 1), &self.board) {
             delta += 1
         }
-        flying.pos = (pos.0, pos.1 + delta as isize);
-        self.destroy_flying_and_respawn();
+        falling.pos = (pos.0, pos.1 + delta as isize);
+        self.destroy_falling_and_respawn();
         self.points += delta + 1;
     }
 
@@ -483,10 +483,10 @@ impl Game {
             self.can_switch = false;
             let old = self.hold.take();
             self.hold = Some(
-                self.flying
+                self.falling
                     .take()
                     .map(|fp| fp.id)
-                    .expect("tried to swap with no flying piece"),
+                    .expect("tried to swap with no falling piece"),
             );
             if let Some(id) = old {
                 self.spawn_with_id(id)
