@@ -1,5 +1,4 @@
-use std::thread;
-use std::time::Instant;
+use std::{thread, time::Instant};
 
 pub fn sleep_until(then: Instant) {
     let now = Instant::now();

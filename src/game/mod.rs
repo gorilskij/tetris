@@ -2,11 +2,13 @@ use ggez::graphics::Color;
 use itertools::Itertools;
 use no_comment::IntoWithoutComments;
 use rand::prelude::*;
-use std::cmp::{max, min};
-use std::collections::{HashMap, VecDeque};
-use std::fs::File;
-use std::io::{BufRead, BufReader};
-use std::path::Path;
+use std::{
+    cmp::{max, min},
+    collections::{HashMap, VecDeque},
+    fs::File,
+    io::{BufRead, BufReader},
+    path::Path,
+};
 use tap::TapOps;
 
 pub(crate) mod nn_trainer;

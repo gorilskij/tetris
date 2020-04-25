@@ -1,15 +1,21 @@
-use crate::game::{intersects_with, Game, PieceId, Pixel, GAME_HEIGHT, GAME_WIDTH};
-use crate::support::sleep_until;
-use ggez::event::{EventHandler, KeyMods};
-use ggez::graphics::{
-    clear, draw, draw_queued_text, present, queue_text, Color, DrawMode, DrawParam, FillOptions,
-    FilterMode, MeshBuilder, Rect, Text, BLACK, WHITE,
+use crate::{
+    game::{intersects_with, Game, PieceId, Pixel, GAME_HEIGHT, GAME_WIDTH},
+    support::sleep_until,
 };
-use ggez::input::keyboard::KeyCode;
-use ggez::mint::Point2;
-use ggez::{Context, GameResult};
-use std::collections::HashMap;
-use std::time::{Duration, Instant};
+use ggez::{
+    event::{EventHandler, KeyMods},
+    graphics::{
+        clear, draw, draw_queued_text, present, queue_text, Color, DrawMode, DrawParam,
+        FillOptions, FilterMode, MeshBuilder, Rect, Text, BLACK, WHITE,
+    },
+    input::keyboard::KeyCode,
+    mint::Point2,
+    Context, GameResult,
+};
+use std::{
+    collections::HashMap,
+    time::{Duration, Instant},
+};
 
 use crate::{run_game, WINDOW_HEIGHT, WINDOW_WIDTH};
 #[allow(unused_imports)]

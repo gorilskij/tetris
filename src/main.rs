@@ -1,5 +1,8 @@
 #![feature(stmt_expr_attributes)] // for fine-grained rustfmt control
 
+#[macro_use]
+extern crate derive_more;
+
 #[allow(unused_imports)]
 use crate::game::nn_trainer::NNTrainer;
 #[allow(unused_imports)]
@@ -11,9 +14,11 @@ use crate::game::visual::VisGame;
 use crate::game::{GAME_HEIGHT, GAME_WIDTH};
 #[allow(unused_imports)]
 use crate::neural_network::{ActivationType, NNReadResult, NN};
-use ggez::conf::{FullscreenType, WindowMode};
-use ggez::event::EventHandler;
-use ggez::{ContextBuilder, GameResult};
+use ggez::{
+    conf::{FullscreenType, WindowMode},
+    event::EventHandler,
+    ContextBuilder, GameResult,
+};
 
 pub(crate) mod game;
 pub(crate) mod neural_network;
@@ -47,16 +52,8 @@ pub fn run_game(eh: &mut impl EventHandler) -> GameResult<()> {
 fn main() {
     // VisGame::new().run().unwrap();
     // NNVisGame::new().run().unwrap();
-    NNTrainer::new("saved_nn.txt".as_ref())
-        .unwrap()
+    NNTrainer::new("data/saved_gen.txt".as_ref())
+        .expect("failed to create nn_trainer")
         .run()
         .unwrap()
-
-    // NN::make(GAME_WIDTH * GAME_HEIGHT)
-    //     .add_layer(20, ActivationType::Relu)
-    //     .add_layer(10, ActivationType::Relu)
-    //     .add_layer(7, ActivationType::Sigmoid)
-    //     .build()
-    //     .unwrap()
-    //     .write_out("saved_nn.txt");
 }

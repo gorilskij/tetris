@@ -1,11 +1,11 @@
 use ggez::nalgebra::DMatrix;
 use itertools::Itertools;
 use rand::prelude::*;
-use std::fs::File;
-use std::io;
-use std::io::{BufRead, BufReader, Error, LineWriter, Write};
-use std::num::{ParseFloatError, ParseIntError};
-use std::path::Path;
+use std::{
+    fs, io,
+    num::{ParseFloatError, ParseIntError},
+    path::Path,
+};
 
 fn relu_activation(x: f64) -> f64 {
     if x < 0. {
@@ -125,30 +125,12 @@ impl NN {
     }
 }
 
-#[derive(Debug)]
+#[derive(From, Debug)]
 pub enum NNReadError {
     IoError(io::Error),
     ParseIntError(ParseIntError),
     ParseFloatError(ParseFloatError),
     Other(String),
-}
-
-impl From<io::Error> for NNReadError {
-    fn from(e: Error) -> Self {
-        Self::IoError(e)
-    }
-}
-
-impl From<ParseIntError> for NNReadError {
-    fn from(e: ParseIntError) -> Self {
-        Self::ParseIntError(e)
-    }
-}
-
-impl From<ParseFloatError> for NNReadError {
-    fn from(e: ParseFloatError) -> Self {
-        Self::ParseFloatError(e)
-    }
 }
 
 pub type NNReadResult<T> = Result<T, NNReadError>;
@@ -169,15 +151,21 @@ fn test_nn_serialization() {
     nn.write_out(file_path).unwrap();
     let read = NN::read_in(file_path).unwrap();
     assert!(nn == read);
-    std::fs::remove_file(file_path).unwrap();
+    fs::remove_file(file_path).unwrap();
 }
 
 impl NN {
     // overwrites!
     #[allow(dead_code)]
-    pub fn write_out<P: AsRef<Path>>(&self, path: P) -> io::Result<()> {
-        let mut lw = LineWriter::new(File::create(path)?);
-        lw.write_all(format!("LAYERS: {}\n", self.layers.len()).as_bytes())?;
+    pub fn to_file<P: AsRef<Path>>(&self, path: P) -> io::Result<()> {
+        fs::write(path, self.to_string())
+    }
+
+    #[allow(dead_code)]
+    #[allow(clippy::inherent_to_string)] // implementing Display is not the best option here
+    pub fn to_string(&self) -> String {
+        let mut string = String::new();
+        string.push_str(&format!("LAYERS: {}\n", self.layers.len()));
         for Layer {
             weights,
             activation,
@@ -186,27 +174,34 @@ impl NN {
             // nrows x ncols (height x width)
             let size = format!("{}x{}", weights.nrows(), weights.ncols());
             let activation = match activation.typ {
-                ActivationType::Relu => b"R",
-                ActivationType::Sigmoid => b"S",
+                ActivationType::Relu => "R",
+                ActivationType::Sigmoid => "S",
             };
             let ws = weights.iter().map(|w| format!("{}", w)).join(",");
-            lw.write_all(size.as_bytes())?;
-            lw.write_all(b" ")?;
-            lw.write_all(activation)?;
-            lw.write_all(b" ")?;
-            lw.write_all(ws.as_bytes())?;
-            lw.write_all(b"\n")?;
+            string.push_str(&size);
+            string.push_str(" ");
+            string.push_str(activation);
+            string.push_str(" ");
+            string.push_str(&ws);
+            string.push_str("\n");
         }
-        Ok(())
+        string
     }
 
     #[allow(dead_code)]
-    pub fn read_in<P: AsRef<Path>>(path: P) -> NNReadResult<Self> {
-        let mut br = BufReader::new(File::open(path)?);
+    pub fn from_file<P: AsRef<Path>>(path: P) -> NNReadResult<Self> {
+        Self::from_string(fs::read_to_string(path)?)
+    }
+
+    #[allow(dead_code)]
+    pub fn from_string<S: Into<String>>(string: S) -> NNReadResult<Self> {
+        let string = string.into();
+        let mut lines = string.lines();
         let num_layers = {
-            let mut line = String::new();
-            br.read_line(&mut line)?;
             let prefix = "LAYERS: ";
+            let line = lines
+                .next()
+                .ok_or_else(|| NNReadError::Other("Input is empty".to_string()))?;
             if line.starts_with(prefix) {
                 line.chars()
                     .skip(prefix.len())
@@ -214,13 +209,14 @@ impl NN {
                     .collect::<String>()
                     .parse::<usize>()?
             } else {
-                return Err(NNReadError::Other("invalid first line format".to_string()));
+                return Err(NNReadError::Other(
+                    "Expected \"LAYERS: [number of layers]\" on the first line".to_string(),
+                ));
             }
         };
         let layer_read_error = |i| NNReadError::Other(format!("invalid layer at index {}", i));
         let mut layers = Vec::with_capacity(num_layers);
-        for (i, line) in br.lines().enumerate() {
-            let line = line?;
+        for (i, line) in lines.enumerate() {
             let mut split = line.split(' ');
             let size = {
                 let mut iter = split.next().ok_or_else(|| layer_read_error(i))?.split('x');

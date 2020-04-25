@@ -1,10 +1,13 @@
-use crate::game::visual::VisGame;
-use crate::game::{GAME_HEIGHT, GAME_WIDTH};
-use crate::neural_network::{ActivationType, NN};
-use crate::run_game;
-use ggez::event::{EventHandler, KeyMods};
-use ggez::input::keyboard::KeyCode;
-use ggez::{Context, GameResult};
+use crate::{
+    game::{visual::VisGame, GAME_HEIGHT, GAME_WIDTH},
+    neural_network::{ActivationType, NN},
+    run_game,
+};
+use ggez::{
+    event::{EventHandler, KeyMods},
+    input::keyboard::KeyCode,
+    Context, GameResult,
+};
 
 // don't know how useful this actually is
 pub struct NNVisGame {
