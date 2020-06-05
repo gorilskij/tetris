@@ -83,9 +83,10 @@ impl FallingPiece {
 
     const LOCK_DELAY: u8 = 5;
 
-    fn reset_lock_delay(&mut self) {
-        // only does anything if self.lock_delay_resets > 0
-        if self.lock_delay_resets > 0 {
+    // will only reset lock delay if the piece is already counting down
+    // and there are resets left
+    fn checked_reset_lock_delay(&mut self) {
+        if self.lock_delay < Self::LOCK_DELAY && self.lock_delay_resets > 0 {
             self.lock_delay = Self::LOCK_DELAY;
             self.lock_delay_resets -= 1;
         }
@@ -320,7 +321,7 @@ impl Game {
                 mask_idx,
                 mask,
                 lock_delay: FallingPiece::LOCK_DELAY,
-                lock_delay_resets: 4,
+                lock_delay_resets: 10,
             })
         }
     }
@@ -419,8 +420,8 @@ impl Game {
             let new_pos = (falling.pos.0 as isize + dx, falling.pos.1 as isize + dy);
             if !intersects_with(mask, new_pos, &self.board) {
                 falling.pos = new_pos;
+                falling.checked_reset_lock_delay();
             }
-            falling.reset_lock_delay();
         } else {
             panic!("tried to move with no falling piece")
         }
@@ -452,7 +453,7 @@ impl Game {
                 }
             }
             if success {
-                falling.reset_lock_delay();
+                falling.checked_reset_lock_delay();
             }
         } else {
             panic!("tried to rotate with no falling piece")

@@ -1,7 +1,10 @@
 use crate::{
-    game::{intersects_with, Game, PieceId, Pixel, GAME_HEIGHT, GAME_WIDTH},
+    game::{intersects_with, FallingPiece, Game, PieceId, Pixel, GAME_HEIGHT, GAME_WIDTH},
+    run_game,
     support::sleep_until,
 };
+#[allow(unused_imports)]
+use crate::{WINDOW_HEIGHT, WINDOW_WIDTH};
 use ggez::{
     event::{EventHandler, KeyMods},
     graphics::{
@@ -17,7 +20,6 @@ use std::{
     time::{Duration, Instant},
 };
 
-use crate::{run_game, WINDOW_HEIGHT, WINDOW_WIDTH};
 #[allow(unused_imports)]
 use std::cmp::min;
 #[allow(unused_imports)]
@@ -149,8 +151,10 @@ const TOP_MARGIN: f32 = 10.;
 const SPACE_BETWEEN: f32 = 30.; // hspace between graphic elements such as hold and board
 const CELL_SIDE: f32 = 30.;
 
-const FPS: u64 = 60;
-const WAIT: Duration = Duration::from_millis(1000 / FPS);
+const PLAY_FPS: u64 = 60;
+const PLAY_WAIT: Duration = Duration::from_millis(1000 / PLAY_FPS);
+const PAUSE_FPS: u64 = 15;
+const PAUSE_WAIT: Duration = Duration::from_millis(1000 / PAUSE_FPS);
 
 impl VisGame {
     // unconditional
@@ -219,6 +223,15 @@ impl VisGame {
 
     // return right
     fn add_grid(&mut self, (left, top): (f32, f32), builder: &mut MeshBuilder) -> GameResult<f32> {
+        // not necessary because background is already black
+        // let bg = Rect {
+        //     x: left,
+        //     y: top,
+        //     w: GAME_WIDTH as f32 * CELL_SIDE,
+        //     h: GAME_HEIGHT as f32 * CELL_SIDE,
+        // };
+        // builder.rectangle(DrawMode::fill(), bg, BLACK);
+        let grid_color = Color::from_rgb(50, 50, 50);
         for rel_x in 0..=GAME_WIDTH {
             let abs_x = left + rel_x as f32 * CELL_SIDE;
             builder.line(
@@ -230,7 +243,7 @@ impl VisGame {
                     },
                 ],
                 1.,
-                BLACK,
+                grid_color,
             )?;
         }
         for rel_y in 0..=GAME_HEIGHT {
@@ -244,7 +257,7 @@ impl VisGame {
                     },
                 ],
                 1.,
-                BLACK,
+                grid_color,
             )?;
         }
         Ok(left + GAME_WIDTH as f32 * CELL_SIDE)
@@ -268,109 +281,137 @@ impl VisGame {
         }
     }
 
-    fn add_falling(&mut self, (left, top): (f32, f32), builder: &mut MeshBuilder) -> GameResult<()> {
-        if let Some(falling) = self.game.falling.as_ref() {
-            let mask = falling.mask;
+    fn add_shadow(
+        (left, top): (f32, f32),
+        falling: &FallingPiece,
+        lowest_y: isize,
+        builder: &mut MeshBuilder,
+    ) -> GameResult<()> {
+        for rel_y in 0..4 {
+            for rel_x in 0..4 {
+                if falling.mask[rel_y][rel_x] {
+                    let abs_y = (rel_y as isize + lowest_y) as usize;
+                    let abs_x = (rel_x as isize + falling.pos.0) as usize;
+                    let vis_y = top + abs_y as f32 * CELL_SIDE;
+                    let vis_x = left + abs_x as f32 * CELL_SIDE;
 
-            // shadow
-            if let Some(lowest_y) = (falling.pos.1 + 1..GAME_HEIGHT as isize)
-                .take_while(|&i| !intersects_with(&mask, (falling.pos.0, i), &self.game.board))
-                .last()
-            {
-                for rel_y in 0..4 {
-                    for rel_x in 0..4 {
-                        if mask[rel_y][rel_x] {
-                            let abs_y = (rel_y as isize + lowest_y) as usize;
-                            let abs_x = (rel_x as isize + falling.pos.0) as usize;
-                            let vis_y = top + abs_y as f32 * CELL_SIDE;
-                            let vis_x = left + abs_x as f32 * CELL_SIDE;
+                    // each pixel outline
+                    // let rect = Rect {
+                    //     x: vis_x,
+                    //     y: vis_y,
+                    //     w: SIDE,
+                    //     h: SIDE,
+                    // };
+                    // builder.rectangle(DrawMode::stroke(3.), rect, falling.id.color());
 
-                            // each pixel outline
-                            // let rect = Rect {
-                            //     x: vis_x,
-                            //     y: vis_y,
-                            //     w: SIDE,
-                            //     h: SIDE,
-                            // };
-                            // builder.rectangle(DrawMode::stroke(3.), rect, falling.id.color());
+                    // fainter color (looks bad)
+                    // let rgb = falling.id.color().to_rgb();
+                    // let increase_possible = rgb.map(|x| 255. / x as f32);
+                    // let min_increase_possible = increase_possible.tmin();
+                    // let (r, g, b) = rgb.map(|x| {
+                    //     let dx = (min_increase_possible * x as f32) as u8;
+                    //     x + min(dx, 255 - x)
+                    // });
+                    // builder.rectangle(DrawMode::fill(), rect, Color::from_rgb(r, g, b));
 
-                            // fainter color (looks bad)
-                            // let rgb = falling.id.color().to_rgb();
-                            // let increase_possible = rgb.map(|x| 255. / x as f32);
-                            // let min_increase_possible = increase_possible.tmin();
-                            // let (r, g, b) = rgb.map(|x| {
-                            //     let dx = (min_increase_possible * x as f32) as u8;
-                            //     x + min(dx, 255 - x)
-                            // });
-                            // builder.rectangle(DrawMode::fill(), rect, Color::from_rgb(r, g, b));
-
-                            // full block outline
-                            let color = falling.id.color();
-                            if rel_y == 0 || !mask[rel_y - 1][rel_x] {
-                                // top line
-                                builder.line(
-                                    &[
-                                        Point2 { x: vis_x, y: vis_y },
-                                        Point2 {
-                                            x: vis_x + SIDE,
-                                            y: vis_y,
-                                        },
-                                    ],
-                                    3.,
-                                    color,
-                                )?;
-                            }
-                            if rel_y == 3 || !mask[rel_y + 1][rel_x] {
-                                // bottom line
-                                builder.line(
-                                    &[
-                                        Point2 {
-                                            x: vis_x,
-                                            y: vis_y + SIDE,
-                                        },
-                                        Point2 {
-                                            x: vis_x + SIDE,
-                                            y: vis_y + SIDE,
-                                        },
-                                    ],
-                                    3.,
-                                    color,
-                                )?;
-                            }
-                            if rel_x == 0 || !mask[rel_y][rel_x - 1] {
-                                // left line
-                                builder.line(
-                                    &[
-                                        Point2 { x: vis_x, y: vis_y },
-                                        Point2 {
-                                            x: vis_x,
-                                            y: vis_y + SIDE,
-                                        },
-                                    ],
-                                    3.,
-                                    color,
-                                )?;
-                            }
-                            if rel_x == 3 || !mask[rel_y][rel_x + 1] {
-                                // right line
-                                builder.line(
-                                    &[
-                                        Point2 {
-                                            x: vis_x + SIDE,
-                                            y: vis_y,
-                                        },
-                                        Point2 {
-                                            x: vis_x + SIDE,
-                                            y: vis_y + SIDE,
-                                        },
-                                    ],
-                                    3.,
-                                    color,
-                                )?;
-                            }
-                        }
+                    // full block outline
+                    let color = falling.id.color();
+                    if rel_y == 0 || !falling.mask[rel_y - 1][rel_x] {
+                        // top line
+                        builder.line(
+                            &[
+                                Point2 { x: vis_x, y: vis_y },
+                                Point2 {
+                                    x: vis_x + SIDE,
+                                    y: vis_y,
+                                },
+                            ],
+                            3.,
+                            color,
+                        )?;
+                    }
+                    if rel_y == 3 || !falling.mask[rel_y + 1][rel_x] {
+                        // bottom line
+                        builder.line(
+                            &[
+                                Point2 {
+                                    x: vis_x,
+                                    y: vis_y + SIDE,
+                                },
+                                Point2 {
+                                    x: vis_x + SIDE,
+                                    y: vis_y + SIDE,
+                                },
+                            ],
+                            3.,
+                            color,
+                        )?;
+                    }
+                    if rel_x == 0 || !falling.mask[rel_y][rel_x - 1] {
+                        // left line
+                        builder.line(
+                            &[
+                                Point2 { x: vis_x, y: vis_y },
+                                Point2 {
+                                    x: vis_x,
+                                    y: vis_y + SIDE,
+                                },
+                            ],
+                            3.,
+                            color,
+                        )?;
+                    }
+                    if rel_x == 3 || !falling.mask[rel_y][rel_x + 1] {
+                        // right line
+                        builder.line(
+                            &[
+                                Point2 {
+                                    x: vis_x + SIDE,
+                                    y: vis_y,
+                                },
+                                Point2 {
+                                    x: vis_x + SIDE,
+                                    y: vis_y + SIDE,
+                                },
+                            ],
+                            3.,
+                            color,
+                        )?;
                     }
                 }
+            }
+        }
+        Ok(())
+    }
+
+    fn add_falling(
+        &mut self,
+        (left, top): (f32, f32),
+        builder: &mut MeshBuilder,
+    ) -> GameResult<()> {
+        if let Some(falling) = self.game.falling.as_ref() {
+            let mask = falling.mask;
+            let color;
+
+            if falling.is_touching_ground(&self.game.board) {
+                let lock_delay_ratio = self
+                    .game
+                    .falling
+                    .as_ref()
+                    .expect("can't draw a falling piece if there isn't one")
+                    .lock_delay as f32
+                    / FallingPiece::LOCK_DELAY as f32;
+                let mut rgb = falling.id.color().to_rgb();
+                rgb = rgb.map(|x| (x as f32 * lock_delay_ratio) as u8);
+                color = Color::from(rgb);
+            } else {
+                color = falling.id.color();
+                // shadow
+                let lowest_y = (falling.pos.1 + 1..GAME_HEIGHT as isize)
+                    .take_while(|&i| !intersects_with(&mask, (falling.pos.0, i), &self.game.board))
+                    .last()
+                    .expect("this should be Some, piece should not be touching ground");
+                Self::add_shadow((left, top), falling, lowest_y, builder)?;
             }
 
             // piece
@@ -387,11 +428,7 @@ impl VisGame {
                             w: SIDE,
                             h: SIDE,
                         };
-                        builder.rectangle(
-                            DrawMode::Fill(FillOptions::default()),
-                            rect,
-                            falling.id.color(),
-                        );
+                        builder.rectangle(DrawMode::Fill(FillOptions::default()), rect, color);
                     }
                 }
             }
@@ -538,10 +575,12 @@ impl VisGame {
 
 impl EventHandler for VisGame {
     fn update(&mut self, _ctx: &mut Context) -> GameResult<()> {
-        if !self.paused {
-            sleep_until(self.next_frame);
-            let start = Instant::now();
+        sleep_until(self.next_frame);
+        let start = Instant::now();
 
+        if self.paused {
+            self.next_frame = start + PAUSE_WAIT;
+        } else {
             let mut actions = Vec::with_capacity(self.keys.len());
             for (&code, info) in self.keys.iter_mut() {
                 if let Repeat::Repeat { delay, .. } = info.repeat {
@@ -563,48 +602,46 @@ impl EventHandler for VisGame {
 
             self.game.iterate();
 
-            self.next_frame = start + WAIT;
+            self.next_frame = start + PLAY_WAIT;
         }
 
         Ok(())
     }
 
     fn draw(&mut self, ctx: &mut Context) -> GameResult<()> {
-        clear(ctx, WHITE);
-
-        let mut builder = MeshBuilder::new();
-
         if self.paused {
-            builder.rectangle(
-                DrawMode::Fill(FillOptions::default()),
-                Rect {
-                    x: 0.,
-                    y: 0.,
-                    w: WINDOW_WIDTH,
-                    h: WINDOW_HEIGHT,
-                },
-                Color::from_rgb(64, 64, 64),
-            );
-        } else {
-            let right = self.add_hold(&mut builder);
+            clear(ctx, Color::from_rgb(64, 64, 64));
 
+            let mut builder = MeshBuilder::new();
+            let _ = self.add_text_info(
+                (WINDOW_WIDTH as f32 / 2., WINDOW_HEIGHT as f32 / 2.),
+                &mut builder,
+                ctx,
+            );
+            draw_queued_text(ctx, DrawParam::default(), None, FilterMode::Linear)?;
+        } else {
+            clear(ctx, BLACK);
+
+            let mut builder = MeshBuilder::new();
+            // left quadrant
+            let right = self.add_hold(&mut builder);
+            // main quadrant
             let pos = (right + SPACE_BETWEEN, TOP_MARGIN);
             let right = self.add_grid(pos, &mut builder)?;
             self.add_pixels(pos, &mut builder);
             self.add_falling(pos, &mut builder)?;
-
+            // right quadrant
             let right = self.add_queue((right + SPACE_BETWEEN, TOP_MARGIN), &mut builder);
             let bottom = self.add_text_info((right + SPACE_BETWEEN, TOP_MARGIN), &mut builder, ctx);
             self.add_keys(
                 (right + SPACE_BETWEEN, bottom + SPACE_BETWEEN),
                 &mut builder,
             );
+            // build and draw
+            let mesh = builder.build(ctx)?;
+            draw(ctx, &mesh, DrawParam::default())?;
+            draw_queued_text(ctx, DrawParam::default(), None, FilterMode::Linear)?;
         }
-
-        // build and draw
-        let mesh = builder.build(ctx)?;
-        draw(ctx, &mesh, DrawParam::default())?;
-        draw_queued_text(ctx, DrawParam::default(), None, FilterMode::Linear)?;
 
         present(ctx)
     }
