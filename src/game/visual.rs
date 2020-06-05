@@ -2,11 +2,12 @@ use crate::{
     game::{intersects_with, FallingPiece, Game, PieceId, Pixel, GAME_HEIGHT, GAME_WIDTH},
     run_game,
     support::sleep_until,
+    HORIZONTAL_WINDOW_DIMS, HORIZONTAL_WINDOW_MODE, VERTICAL_WINDOW_DIMS, VERTICAL_WINDOW_MODE,
 };
 #[allow(unused_imports)]
-use crate::{WINDOW_HEIGHT, WINDOW_WIDTH};
 use ggez::{
     event::{EventHandler, KeyMods},
+    graphics,
     graphics::{
         clear, draw, draw_queued_text, present, queue_text, Color, DrawMode, DrawParam,
         FillOptions, FilterMode, MeshBuilder, Rect, Text, BLACK, WHITE,
@@ -24,6 +25,12 @@ use std::{
 use std::cmp::min;
 #[allow(unused_imports)]
 use tuple_map::*;
+
+#[derive(Copy, Clone, Eq, PartialEq)]
+enum Orientation {
+    Horizontal,
+    Vertical,
+}
 
 // fresh indicates the key was just pressed (with iterations left to wait)
 #[derive(Copy, Clone, Debug, Eq, PartialEq)]
@@ -56,9 +63,32 @@ pub struct KeyInfo {
 
 pub type Keys = HashMap<KeyCode, KeyInfo>;
 
+// trace_macros!(true);
+
+macro_rules! keys {
+    (@ins_key $keys:ident, $code:tt * ($initial_delay:expr, $delay:expr)) => {
+        $keys.insert(
+            KeyCode::$code,
+            KeyInfo {
+                state: PressedState::Up,
+                repeat: Repeat::Repeat { initial_delay: $initial_delay, delay: $delay }
+            },
+        )
+    };
+    (@ins_key $keys:ident, $code:tt) => {
+        $keys.insert(KeyCode::$code, KeyInfo { state: PressedState::Up, repeat: Repeat::NoRepeat })
+    };
+    ($( $code:tt $( * ($( $t:tt )*) )? ),* $(,)?) => {{
+        let mut keys = Keys::new();
+        $( keys!(@ins_key keys, $code $( * ($( $t )*) )?); )*
+        keys
+    }};
+}
+
 pub struct VisGame {
     pub game: Game,
     pub paused: bool,
+    orientation: Orientation,
     next_frame: Instant,
     pub keys: Keys,
 }
@@ -66,75 +96,17 @@ pub struct VisGame {
 impl VisGame {
     #[allow(dead_code)]
     pub fn new() -> Self {
-        let mut keys = Keys::new();
-        keys.insert(
-            KeyCode::Left,
-            KeyInfo {
-                state: PressedState::Up,
-                repeat: Repeat::Repeat {
-                    initial_delay: 2,
-                    delay: 4,
-                },
-            },
-        );
-        keys.insert(
-            KeyCode::Right,
-            KeyInfo {
-                state: PressedState::Up,
-                repeat: Repeat::Repeat {
-                    initial_delay: 2,
-                    delay: 4,
-                },
-            },
-        );
-        keys.insert(
-            KeyCode::Down,
-            KeyInfo {
-                state: PressedState::Up,
-                repeat: Repeat::Repeat {
-                    initial_delay: 0,
-                    delay: 3,
-                },
-            },
-        );
-        keys.insert(
-            KeyCode::Up,
-            KeyInfo {
-                state: PressedState::Up,
-                repeat: Repeat::NoRepeat,
-            },
-        );
-        keys.insert(
-            KeyCode::RShift,
-            KeyInfo {
-                state: PressedState::Up,
-                repeat: Repeat::NoRepeat,
-            },
-        );
-        keys.insert(
-            KeyCode::Space,
-            KeyInfo {
-                state: PressedState::Up,
-                repeat: Repeat::NoRepeat,
-            },
-        );
-        keys.insert(
-            KeyCode::J,
-            KeyInfo {
-                state: PressedState::Up,
-                repeat: Repeat::NoRepeat,
-            },
-        );
-        keys.insert(
-            KeyCode::Escape,
-            KeyInfo {
-                state: PressedState::Up,
-                repeat: Repeat::NoRepeat,
-            },
-        );
+        let keys = keys! {
+            Left * (2, 4),
+            Right * (2, 4),
+            Down * (0, 3),
+            Up, RShift, Space,
+            J, Escape, Tab,
+        };
         Self {
             game: Game::new(),
             paused: false,
+            orientation: Orientation::Horizontal,
             next_frame: Instant::now(),
             keys,
         }
@@ -157,17 +129,18 @@ const PAUSE_FPS: u64 = 15;
 const PAUSE_WAIT: Duration = Duration::from_millis(1000 / PAUSE_FPS);
 
 impl VisGame {
-    // unconditional
-    fn do_key_action(&mut self, code: KeyCode) {
+    fn do_key_action(&mut self, code: KeyCode, ctx: &mut Context) {
+        use KeyCode::*;
         match code {
-            KeyCode::Left => self.game.move_falling_piece(-1, 0),
-            KeyCode::Right => self.game.move_falling_piece(1, 0),
-            KeyCode::Down => self.game.move_falling_piece(0, 1),
-            KeyCode::Up => self.game.rotate_falling_piece(1),
-            KeyCode::RShift => self.game.rotate_falling_piece(-1),
-            KeyCode::Space => self.game.hard_drop(),
-            KeyCode::J => self.game.switch_hold(),
-            KeyCode::Escape => self.paused = !self.paused,
+            Left => self.game.move_falling_piece(-1, 0),
+            Right => self.game.move_falling_piece(1, 0),
+            Down => self.game.move_falling_piece(0, 1),
+            Up => self.game.rotate_falling_piece(1),
+            RShift => self.game.rotate_falling_piece(-1),
+            Space => self.game.hard_drop(),
+            J => self.game.switch_hold(),
+            Tab => self.switch_orientation(ctx),
+            Escape => self.paused = !self.paused,
             c => panic!("unexpected KeyCode: {:?}", c),
         }
     }
@@ -195,17 +168,18 @@ impl VisGame {
         }
     }
 
-    // return right
-    fn add_hold(&mut self, builder: &mut MeshBuilder) -> f32 {
+    // return (bottom, right)
+    fn add_hold(&mut self, builder: &mut MeshBuilder) -> (f32, f32) {
         // background
         let left = LEFT_MARGIN;
         let top = TOP_MARGIN;
         let width = (4. + 2.) * CELL_SIDE;
+        let height = (1. * 3. + 2.) * CELL_SIDE;
         let bg_rect = Rect {
             x: left,
             y: top,
             w: width,
-            h: (1. * 3. + 2.) * CELL_SIDE,
+            h: height,
         };
         builder.rectangle(
             DrawMode::Fill(FillOptions::default()),
@@ -216,13 +190,18 @@ impl VisGame {
         if let Some(id) = self.game.hold {
             let vis_x = left + CELL_SIDE;
             let vis_y = top + CELL_SIDE;
+            // TODO: correct for non-centered pieces
             self.add_piece_at((vis_x, vis_y), id, builder)
         }
-        left + width
+        (top + height, left + width)
     }
 
-    // return right
-    fn add_grid(&mut self, (left, top): (f32, f32), builder: &mut MeshBuilder) -> GameResult<f32> {
+    // return (bottom, right)
+    fn add_grid(
+        &mut self,
+        (left, top): (f32, f32),
+        builder: &mut MeshBuilder,
+    ) -> GameResult<(f32, f32)> {
         // not necessary because background is already black
         // let bg = Rect {
         //     x: left,
@@ -260,7 +239,10 @@ impl VisGame {
                 grid_color,
             )?;
         }
-        Ok(left + GAME_WIDTH as f32 * CELL_SIDE)
+        Ok((
+            top + GAME_HEIGHT as f32 * CELL_SIDE,
+            left + GAME_WIDTH as f32 * CELL_SIDE,
+        ))
     }
 
     fn add_pixels(&mut self, (left, top): (f32, f32), builder: &mut MeshBuilder) {
@@ -437,24 +419,41 @@ impl VisGame {
         Ok(())
     }
 
-    fn add_queue(&mut self, (left, top): (f32, f32), builder: &mut MeshBuilder) -> f32 {
+    // return (bottom, right)
+    fn add_queue(&mut self, (left, top): (f32, f32), builder: &mut MeshBuilder) -> (f32, f32) {
         // background
-        let width = (4. + 2.) * CELL_SIDE;
+        let (width, height) = match self.orientation {
+            // tall and thin / short and wide
+            Orientation::Horizontal => ((4. + 2.) * CELL_SIDE, (4. * 3. + 5.) * CELL_SIDE),
+            Orientation::Vertical => ((4. * 3. + 5.) * CELL_SIDE, (4. + 2.) * CELL_SIDE),
+        };
         let bg_rect = Rect {
             x: left,
             y: top,
             w: width,
-            h: (4. * 3. + 5.) * CELL_SIDE,
+            h: height,
         };
         builder.rectangle(DrawMode::fill(), bg_rect, Color::from_rgb(56, 56, 56));
         // pieces
-        let x = left + CELL_SIDE;
-        for (i, id) in self.game.piece_queue.iter().enumerate() {
-            let y = top + (i as f32 * 5. + (i + 1) as f32) * CELL_SIDE;
-            self.add_piece_at((x, y), id, builder);
+        match self.orientation {
+            Orientation::Horizontal => {
+                let x = left + CELL_SIDE;
+                for (i, id) in self.game.piece_queue.iter().enumerate() {
+                    let y = top + (i as f32 * 5. + (i + 1) as f32) * CELL_SIDE;
+                    self.add_piece_at((x, y), id, builder);
+                }
+            }
+            Orientation::Vertical => {
+                let scale = 0.8;
+                let y = top + scale * CELL_SIDE;
+                for (i, id) in self.game.piece_queue.iter().enumerate() {
+                    let x = left + scale * (i as f32 * 5. + (i + 1) as f32) * CELL_SIDE;
+                    self.add_piece_at((x, y), id, builder);
+                }
+            }
         }
 
-        left + width
+        (top + height, left + width)
     }
 
     fn add_text_info(
@@ -463,64 +462,61 @@ impl VisGame {
         builder: &mut MeshBuilder,
         ctx: &mut Context,
     ) -> f32 {
-        let height = 6. * CELL_SIDE;
+        let (width, height) = match self.orientation {
+            // tall-ish / wide-ish
+            Orientation::Horizontal => (6. * CELL_SIDE, 10. * CELL_SIDE),
+            Orientation::Vertical => (6. * CELL_SIDE, 6.5 * CELL_SIDE),
+        };
         let bg_rect = Rect {
             x: left,
             y: top,
-            w: 10. * CELL_SIDE,
+            w: width,
             h: height,
         };
         builder.rectangle(DrawMode::fill(), bg_rect, Color::from_rgb(56, 56, 56));
-        // points
-        queue_text(
-            ctx,
-            &Text::new(format!("{}", self.game.points)),
-            Point2 {
-                x: left + CELL_SIDE,
-                y: top + CELL_SIDE,
-            },
-            Some(WHITE),
-        );
-        // level
-        queue_text(
-            ctx,
-            &Text::new(format!("Level {}", self.game.level)),
-            Point2 {
-                x: left + CELL_SIDE,
-                y: top + 2. * CELL_SIDE,
-            },
-            Some(WHITE),
-        );
-        // lines cleared
-        queue_text(
-            ctx,
-            &Text::new(format!("Cleared: {}", self.game.cleared)),
-            Point2 {
-                x: left + CELL_SIDE,
-                y: top + 3. * CELL_SIDE,
-            },
-            Some(WHITE),
-        );
-        // fps
-        let fps = ggez::timer::fps(ctx);
-        queue_text(
-            ctx,
-            &Text::new(format!("{:>3} fps", fps as u32)),
-            Point2 {
-                x: left + CELL_SIDE,
-                y: top + 4. * CELL_SIDE,
-            },
-            Some(WHITE),
-        );
+        let text_positions = match self.orientation {
+            Orientation::Horizontal => (1..=4)
+                .map(|i| Point2 {
+                    x: left + CELL_SIDE,
+                    y: top + i as f32 * CELL_SIDE,
+                })
+                .collect::<Vec<_>>(),
+            Orientation::Vertical => (0..=3)
+                .map(|i| Point2 {
+                    x: left + CELL_SIDE,
+                    y: top + (i as f32 + 0.5) * CELL_SIDE,
+                })
+                .collect::<Vec<_>>(),
+        };
+
+        macro_rules! queue_text {
+            ($pos:expr, $( $fmt:expr ),*) => {
+                queue_text(
+                    ctx, &Text::new(format!($( $fmt ),*)), text_positions[$pos], Some(WHITE)
+                );
+            }
+        }
+        queue_text!(0, "{}", self.game.points);
+        queue_text!(1, "Level {}", self.game.level);
+        queue_text!(2, "Cleared {}", self.game.cleared);
+        queue_text!(3, "fps {}", ggez::timer::fps(ctx) as u32);
+
         top + height
     }
 
-    fn add_keys(&self, (left, top): (f32, f32), builder: &mut MeshBuilder) {
+    // return bottom
+    fn add_keys(&self, (left, top): (f32, f32), builder: &mut MeshBuilder) -> f32 {
+        let scale = match self.orientation {
+            Orientation::Horizontal => 1.,
+            Orientation::Vertical => 0.6, // 10 wide in a space of 6
+        };
+        let width = scale * (6. + 4.) * CELL_SIDE;
+        let height = scale * (8. + 5.) * CELL_SIDE;
         let bg_rect = Rect {
             x: left,
             y: top,
-            w: (6. + 4.) * CELL_SIDE,
-            h: (8. + 5.) * CELL_SIDE,
+            w: width,
+            h: height,
         };
         builder.rectangle(DrawMode::fill(), bg_rect, Color::from_rgb(56, 56, 56));
         let mut key_bg = |x, y, rel_width, code| {
@@ -528,8 +524,8 @@ impl VisGame {
             let rect = Rect {
                 x,
                 y,
-                w: cells as f32 * CELL_SIDE,
-                h: 2. * CELL_SIDE,
+                w: scale * cells as f32 * CELL_SIDE,
+                h: scale * 2. * CELL_SIDE,
             };
             builder.rectangle(
                 DrawMode::fill(),
@@ -542,39 +538,89 @@ impl VisGame {
             );
         };
         // up key
-        key_bg(left + 4. * CELL_SIDE, top + CELL_SIDE, 1, KeyCode::Up);
+        key_bg(
+            left + scale * 4. * CELL_SIDE,
+            top + scale * CELL_SIDE,
+            1,
+            KeyCode::Up,
+        );
         // down key
         key_bg(
-            left + 4. * CELL_SIDE,
-            top + 4. * CELL_SIDE,
+            left + scale * 4. * CELL_SIDE,
+            top + scale * 4. * CELL_SIDE,
             1,
             KeyCode::Down,
         );
         // left key
-        key_bg(left + CELL_SIDE, top + 4. * CELL_SIDE, 1, KeyCode::Left);
+        key_bg(
+            left + scale * CELL_SIDE,
+            top + scale * 4. * CELL_SIDE,
+            1,
+            KeyCode::Left,
+        );
         // right key
         key_bg(
-            left + 7. * CELL_SIDE,
-            top + 4. * CELL_SIDE,
+            left + scale * 7. * CELL_SIDE,
+            top + scale * 4. * CELL_SIDE,
             1,
             KeyCode::Right,
         );
         // hold key
-        key_bg(left + CELL_SIDE, top + 7. * CELL_SIDE, 1, KeyCode::J);
+        key_bg(
+            left + scale * CELL_SIDE,
+            top + scale * 7. * CELL_SIDE,
+            1,
+            KeyCode::J,
+        );
         // rshift
         key_bg(
-            left + 4. * CELL_SIDE,
-            top + 7. * CELL_SIDE,
+            left + scale * 4. * CELL_SIDE,
+            top + scale * 7. * CELL_SIDE,
             2,
             KeyCode::RShift,
         );
         // spacebar
-        key_bg(left + CELL_SIDE, top + 10. * CELL_SIDE, 3, KeyCode::Space);
+        key_bg(
+            left + scale * CELL_SIDE,
+            top + scale * 10. * CELL_SIDE,
+            3,
+            KeyCode::Space,
+        );
+
+        top + height
+    }
+}
+
+// other
+impl VisGame {
+    fn switch_orientation(&mut self, ctx: &mut Context) {
+        let dims = match self.orientation {
+            Orientation::Horizontal => {
+                self.orientation = Orientation::Vertical;
+                graphics::set_mode(ctx, VERTICAL_WINDOW_MODE).unwrap();
+                VERTICAL_WINDOW_DIMS
+            }
+            Orientation::Vertical => {
+                self.orientation = Orientation::Horizontal;
+                graphics::set_mode(ctx, HORIZONTAL_WINDOW_MODE).unwrap();
+                HORIZONTAL_WINDOW_DIMS
+            }
+        };
+        graphics::set_screen_coordinates(
+            ctx,
+            Rect {
+                x: 0.,
+                y: 0.,
+                w: dims.0,
+                h: dims.1,
+            },
+        )
+        .unwrap()
     }
 }
 
 impl EventHandler for VisGame {
-    fn update(&mut self, _ctx: &mut Context) -> GameResult<()> {
+    fn update(&mut self, ctx: &mut Context) -> GameResult<()> {
         sleep_until(self.next_frame);
         let start = Instant::now();
 
@@ -597,7 +643,7 @@ impl EventHandler for VisGame {
                 }
             }
             for code in actions {
-                self.do_key_action(code)
+                self.do_key_action(code, ctx)
             }
 
             self.game.iterate();
@@ -610,33 +656,51 @@ impl EventHandler for VisGame {
 
     fn draw(&mut self, ctx: &mut Context) -> GameResult<()> {
         if self.paused {
+            let (window_width, window_height) = match self.orientation {
+                Orientation::Horizontal => HORIZONTAL_WINDOW_DIMS,
+                Orientation::Vertical => VERTICAL_WINDOW_DIMS,
+            };
             clear(ctx, Color::from_rgb(64, 64, 64));
 
             let mut builder = MeshBuilder::new();
-            let _ = self.add_text_info(
-                (WINDOW_WIDTH as f32 / 2., WINDOW_HEIGHT as f32 / 2.),
-                &mut builder,
-                ctx,
-            );
+            let _ = self.add_text_info((window_width / 2., window_height / 2.), &mut builder, ctx);
             draw_queued_text(ctx, DrawParam::default(), None, FilterMode::Linear)?;
         } else {
             clear(ctx, BLACK);
 
             let mut builder = MeshBuilder::new();
             // left quadrant
-            let right = self.add_hold(&mut builder);
+            let (hold_bottom, right) = self.add_hold(&mut builder);
             // main quadrant
             let pos = (right + SPACE_BETWEEN, TOP_MARGIN);
-            let right = self.add_grid(pos, &mut builder)?;
+            let (bottom, right) = self.add_grid(pos, &mut builder)?;
             self.add_pixels(pos, &mut builder);
             self.add_falling(pos, &mut builder)?;
-            // right quadrant
-            let right = self.add_queue((right + SPACE_BETWEEN, TOP_MARGIN), &mut builder);
-            let bottom = self.add_text_info((right + SPACE_BETWEEN, TOP_MARGIN), &mut builder, ctx);
-            self.add_keys(
-                (right + SPACE_BETWEEN, bottom + SPACE_BETWEEN),
-                &mut builder,
-            );
+            // right or bottom quadrant
+            match self.orientation {
+                Orientation::Horizontal => {
+                    let (_, right) =
+                        self.add_queue((right + SPACE_BETWEEN, TOP_MARGIN), &mut builder);
+                    let bottom =
+                        self.add_text_info((right + SPACE_BETWEEN, TOP_MARGIN), &mut builder, ctx);
+                    self.add_keys(
+                        (right + SPACE_BETWEEN, bottom + SPACE_BETWEEN),
+                        &mut builder,
+                    );
+                }
+                Orientation::Vertical => {
+                    self.add_queue((LEFT_MARGIN, bottom + SPACE_BETWEEN), &mut builder);
+                    let bottom = self.add_keys(
+                        (LEFT_MARGIN, hold_bottom + SPACE_BETWEEN / 2.),
+                        &mut builder,
+                    );
+                    self.add_text_info(
+                        (LEFT_MARGIN, bottom + SPACE_BETWEEN / 2.),
+                        &mut builder,
+                        ctx,
+                    );
+                }
+            }
             // build and draw
             let mesh = builder.build(ctx)?;
             draw(ctx, &mesh, DrawParam::default())?;
@@ -646,27 +710,19 @@ impl EventHandler for VisGame {
         present(ctx)
     }
 
-    fn key_down_event(&mut self, _ctx: &mut Context, code: KeyCode, _mods: KeyMods, _: bool) {
-        let mut found = false;
-        let mut action = None;
-        self.keys.entry(code).and_modify(|v| {
-            if v.state == PressedState::Up {
-                v.state = match v.repeat {
+    fn key_down_event(&mut self, ctx: &mut Context, code: KeyCode, _mods: KeyMods, _: bool) {
+        let mut do_action = false;
+        self.keys.entry(code).and_modify(|key| {
+            if key.state == PressedState::Up {
+                key.state = match key.repeat {
                     Repeat::Repeat { initial_delay, .. } => PressedState::Fresh(initial_delay),
                     Repeat::NoRepeat => PressedState::Down,
                 };
-                action = Some(code);
+                do_action = true;
             }
-            found = true;
         });
-        if let Some(code) = action {
-            self.do_key_action(code)
-        }
-
-        if !found {
-            if let KeyCode::Escape = code {
-                self.paused = !self.paused
-            }
+        if do_action {
+            self.do_key_action(code, ctx)
         }
     }
 
