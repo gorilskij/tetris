@@ -519,11 +519,11 @@ impl VisGame {
             h: height,
         };
         builder.rectangle(DrawMode::fill(), bg_rect, Color::from_rgb(56, 56, 56));
-        let mut key_bg = |x, y, rel_width, code| {
+        let mut key_bg = |code, x, y, rel_width| {
             let cells = rel_width * 3 - 1;
             let rect = Rect {
-                x,
-                y,
+                x: left + scale * x as f32 * CELL_SIDE,
+                y: top + scale * y as f32 * CELL_SIDE,
                 w: scale * cells as f32 * CELL_SIDE,
                 h: scale * 2. * CELL_SIDE,
             };
@@ -537,55 +537,15 @@ impl VisGame {
                 },
             );
         };
-        // up key
-        key_bg(
-            left + scale * 4. * CELL_SIDE,
-            top + scale * CELL_SIDE,
-            1,
-            KeyCode::Up,
-        );
-        // down key
-        key_bg(
-            left + scale * 4. * CELL_SIDE,
-            top + scale * 4. * CELL_SIDE,
-            1,
-            KeyCode::Down,
-        );
-        // left key
-        key_bg(
-            left + scale * CELL_SIDE,
-            top + scale * 4. * CELL_SIDE,
-            1,
-            KeyCode::Left,
-        );
-        // right key
-        key_bg(
-            left + scale * 7. * CELL_SIDE,
-            top + scale * 4. * CELL_SIDE,
-            1,
-            KeyCode::Right,
-        );
-        // hold key
-        key_bg(
-            left + scale * CELL_SIDE,
-            top + scale * 7. * CELL_SIDE,
-            1,
-            KeyCode::J,
-        );
-        // rshift
-        key_bg(
-            left + scale * 4. * CELL_SIDE,
-            top + scale * 7. * CELL_SIDE,
-            2,
-            KeyCode::RShift,
-        );
-        // spacebar
-        key_bg(
-            left + scale * CELL_SIDE,
-            top + scale * 10. * CELL_SIDE,
-            3,
-            KeyCode::Space,
-        );
+
+        use KeyCode::*;
+        key_bg(Up, 4, 1, 1);
+        key_bg(Down, 4, 4, 1);
+        key_bg(Left, 1, 4, 1);
+        key_bg(Right, 7, 4, 1);
+        key_bg(J, 1, 7, 1);
+        key_bg(RShift, 4, 7, 2);
+        key_bg(Space, 1, 10, 3);
 
         top + height
     }
