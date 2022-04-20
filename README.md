@@ -1,11 +1,9 @@
 # Tetris
 
-The intention is to eventually connect a neural network to the game...
-
-For now it's just a playable tetris game, functionality includes soft and hard drop,
+Tetris clone, functionality includes soft and hard drop,
 clockwise and counterclockwise rotation, hold, piece queue, line clearing, levels,
 increasing speed, increasing scoring system depending on number of lines cleared
-and current level, falling piece shadow. Basically, it's a tetris.
+and current level, falling piece shadow.
 
 ### Controls
 
